@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "workflow-agent"
+version = "0.1.0"
+description = "Templated agent sandbox framework for sandboxed Claude instances."
+requires-python = ">=3.12"
+dependencies = [
+    "workflow-notify @ git+https://github.com/zzofrea/workflow-notify.git",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+    "structlog>=24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+    "pyright>=1.1",
+]
+
+[project.scripts]
+workflow-agent = "workflow_agent.cli:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/workflow_agent"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
