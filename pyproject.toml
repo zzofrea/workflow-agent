@@ -45,3 +45,4 @@ pythonVersion = "3.12"
 typeCheckingMode = "basic"
 venvPath = "."
 venv = ".venv"
+exclude = ["tests/test_entrypoint.py", "container/", ".venv/"]
