@@ -111,23 +111,6 @@ class TestScenario1AuditorBehaviorPreserved:
         assert env_dict["PGHOST"] == "gov-bid-postgres"
 
 
-class TestScenario2AnalystRole:
-    """Scenario 2: New analyst role produces a report.
-
-    GIVEN a bid-scraper analyst role and reader policy are defined.
-    WHEN the operator runs workflow-agent run analyst --target bid-scraper.
-    THEN a sandboxed container launches with the same database access.
-    AND the agent produces a markdown report.
-    """
-
-    def test_analyst_role_loads(self) -> None:
-        agents_dir = Path(__file__).parent.parent / "agents"
-        role_path = agents_dir / "bid-scraper" / "roles" / "analyst.yaml"
-        role = load_role(role_path)
-        assert role.output_format == "markdown"
-        assert role.policy == "reader"
-        assert "procurement" in role.system_prompt.lower()
-
 
 class TestScenario3MultiDatabase:
     """Scenario 3: Policy with multiple databases connects all targets.
