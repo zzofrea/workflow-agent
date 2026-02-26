@@ -23,7 +23,7 @@ jobs:
       # Allow pip to install workflow-notify from private repo
       - name: Configure git for private deps
         run: |
-          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://x-access-token:${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
