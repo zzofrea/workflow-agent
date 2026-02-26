@@ -8,7 +8,7 @@ from pathlib import Path
 AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "agents"
 
 # Docker image for the agent container
-AGENT_IMAGE = "workflow-agent:latest"
+AGENT_IMAGE = "ghcr.io/zzofrea/workflow-agent:latest"
 
 # Host-side Claude auth paths
 CLAUDE_AUTH_JSON = str(Path.home() / ".claude.json")
