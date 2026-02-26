@@ -111,7 +111,6 @@ class TestScenario1AuditorBehaviorPreserved:
         assert env_dict["PGHOST"] == "gov-bid-postgres"
 
 
-
 class TestScenario3MultiDatabase:
     """Scenario 3: Policy with multiple databases connects all targets.
 
