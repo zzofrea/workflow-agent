@@ -175,6 +175,6 @@ Monthly inventory and sales summary.
 - ~208k line items in silver.fact_sales_items
 - ~202k completed items in gold snapshot
 - 142 SKUs tracked in forecast_depletion
-- 8 distinct marketplaces
+- 3+ distinct marketplaces (Amazon, Shopify, WooCommerce are the primary channels)
 - ~5,460 monthly SKU aggregation rows
 - ~432 monthly inventory sales rows
