@@ -296,9 +296,6 @@ class TestScenario9UnparseableOutput:
     def test_archive_preserves_report(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        output_dir = tmp_path / "output"
-        output_dir.mkdir()
-
         archive_base = tmp_path / "archive"
         monkeypatch.setattr("workflow_agent.output.OUTPUT_BASE", str(archive_base))
 
@@ -307,7 +304,7 @@ class TestScenario9UnparseableOutput:
             "raw_output": "Unparseable content here",
             "summary": "Parse failed",
         }
-        dest = archive_output(str(output_dir), "svc", "role", report)
+        dest = archive_output("svc", "role", report)
 
         saved = json.loads((Path(dest) / "report.json").read_text())
         assert saved["overall"] == "incomplete"

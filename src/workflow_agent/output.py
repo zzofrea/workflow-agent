@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 from datetime import UTC, datetime
 from typing import Any
 
@@ -33,33 +32,19 @@ def archive_dir(service: str, role_name: str) -> str:
 
 
 def archive_output(
-    output_dir: str,
     service: str,
     role_name: str,
     report: dict[str, Any],
 ) -> str:
-    """Copy agent output to the archive directory.
+    """Archive the agent report to ~/agent-output/<service>/<role>_<timestamp>/.
 
-    Returns the archive directory path.
+    Only writes report.json. Returns the archive directory path.
     """
     dest = archive_dir(service, role_name)
     os.makedirs(dest, exist_ok=True)
 
-    # Write report.json
     with open(os.path.join(dest, "report.json"), "w") as f:
         json.dump(report, f, indent=2)
-
-    # Copy report.md if it exists in the output dir
-    report_md = os.path.join(output_dir, "report.md")
-    if os.path.exists(report_md):
-        shutil.copy2(report_md, os.path.join(dest, "report.md"))
-
-    # Copy any other files from the output dir
-    for entry in os.listdir(output_dir):
-        src = os.path.join(output_dir, entry)
-        dst = os.path.join(dest, entry)
-        if os.path.isfile(src) and not os.path.exists(dst):
-            shutil.copy2(src, dst)
 
     log.info("output.archived", path=dest, service=service, role=role_name)
     print(f"Report archived to {dest}/")

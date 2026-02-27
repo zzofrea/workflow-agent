@@ -81,7 +81,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     )
 
     # Archive output
-    archive_output(".", service, role_name, report)
+    archive_output(service, role_name, report)
 
     # Notify
     if notify:

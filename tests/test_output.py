@@ -31,34 +31,24 @@ class TestArchiveOutput:
     """Tests for archive_output()."""
 
     def test_archives_report(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        output_dir = tmp_path / "output"
-        output_dir.mkdir()
-        (output_dir / "report.md").write_text("# Report")
-        (output_dir / "extra.txt").write_text("extra data")
-
         archive_base = tmp_path / "archive"
         monkeypatch.setattr("workflow_agent.output.OUTPUT_BASE", str(archive_base))
 
         report = {"overall": "pass", "summary": "All good"}
-        dest = archive_output(str(output_dir), "svc", "auditor", report)
+        dest = archive_output("svc", "auditor", report)
 
         assert Path(dest).exists()
         assert (Path(dest) / "report.json").exists()
-        assert (Path(dest) / "report.md").exists()
-        assert (Path(dest) / "extra.txt").exists()
 
         saved = json.loads((Path(dest) / "report.json").read_text())
         assert saved["overall"] == "pass"
 
     def test_creates_directories(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        output_dir = tmp_path / "output"
-        output_dir.mkdir()
-
         archive_base = tmp_path / "deep" / "nested" / "archive"
         monkeypatch.setattr("workflow_agent.output.OUTPUT_BASE", str(archive_base))
 
         report = {"overall": "pass"}
-        dest = archive_output(str(output_dir), "svc", "role", report)
+        dest = archive_output("svc", "role", report)
         assert Path(dest).exists()
 
 
