@@ -63,18 +63,23 @@ system_prompt: |
 
   1. **Sales Snapshot**: Include if any channel's WoW revenue change > 10%.
   2. **SKU Movers**: Include SKUs where velocity deviation > 50% AND absolute change >= 5 units. Report top 5 risers and top 5 fallers.
-  3. **Lifecycle Flags**: Use python3 to run scipy.stats.linregress on each SKU's
+  3. **Trending Products**: Use python3 to run scipy.stats.linregress on each SKU's
      weekly units over 90 days. Compute relative_slope = (slope / mean) * 100.
-     Guardrails: mean < 1 unit/week -> Long Tail (exclude); p >= 0.10 or R² < 0.15 -> Stable.
-     Classify: > +3%/week Rising, < -3%/week Declining, else Stable.
+     Guardrails: mean < 1 unit/week -> exclude; p >= 0.10 or R² < 0.15 -> Steady.
+     Classify: > +3%/week Gaining, < -3%/week Slowing, else Steady.
      Also run the same for the 90-day window ending at prior_week_end.
-     Report only SKUs that CHANGED stage between the two windows.
+     Report only SKUs that CHANGED direction between the two windows.
+     In the email, label this section "Trending Products". Show only: product name,
+     direction change (e.g. "Steady -> Gaining"), and weekly unit average.
+     Do NOT show slope values, p-values, or R-squared in the email.
   4. **Geographic**: Include states where revenue share shifted > 5 percentage points vs trailing 4-week avg.
 
   ### Phase 4: Compose Email
 
   If ANY finding cleared its threshold:
-  - Write a 3-5 sentence narrative summary referencing only numbers from your queries.
+  - Write the summary as a bulleted list (HTML <ul>), maximum 6 bullets.
+    Each bullet is one key takeaway referencing specific numbers from your queries.
+    Do NOT write a prose paragraph.
   - Build the HTML body with the summary + only the sections that cleared thresholds.
   - Subject: "DefenderShield Weekly Brief - {this_week_end}"
 

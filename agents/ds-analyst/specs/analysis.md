@@ -183,29 +183,32 @@ For each SKU, compare This Week's unit sales to the trailing 4-week average
 Output: top 5 risers and top 5 fallers, showing SKU, product name, this_week
 units, 4wk_avg units, deviation_pct.
 
-### 3. Product Lifecycle Flags
+### 3. Trending Products
 
-Classify each SKU's lifecycle stage using 90-day weekly unit sales data:
+Identifies products whose sales momentum shifted this week. Uses 90-day
+weekly sales data to detect whether a product is gaining, slowing, or steady.
+
+**Calculation** (internal -- do not expose stats in the email):
 
 1. Aggregate weekly units for each SKU over the past 90 days (~13 data points).
 2. Use python3 with scipy.stats.linregress to compute slope, p-value, R-squared.
 3. Compute relative slope: `(slope / mean_weekly_units) * 100`.
 4. Apply guardrails:
-   - Mean weekly volume < 1 unit -> "Long Tail" (exclude from reporting)
-   - p-value >= 0.10 OR R-squared < 0.15 -> "Stable" (insufficient confidence)
+   - Mean weekly volume < 1 unit -> exclude (too low volume to be meaningful)
+   - p-value >= 0.10 OR R-squared < 0.15 -> "Steady" (not enough confidence)
 5. Classify:
-   - Relative slope > +3%/week -> "Rising"
-   - Relative slope < -3%/week -> "Declining"
-   - Otherwise -> "Stable"
+   - Relative slope > +3%/week -> "Gaining"
+   - Relative slope < -3%/week -> "Slowing"
+   - Otherwise -> "Steady"
 
-**Threshold**: Include this section only if at least one SKU transitioned
-lifecycle stage compared to the prior week's classification.
+**Threshold**: Include this section only if at least one SKU changed direction
+compared to the prior week's classification (run the same analysis for the
+90-day window ending at prior_week_end and compare).
 
-To detect transitions: run the same classification for the 90-day window ending
-at prior_week_end and compare.
-
-Output: SKUs that changed stage, showing SKU, product name, previous stage,
-current stage, relative slope, p-value.
+**Email output**: Label the section "Trending Products". Show a simple table
+with columns: Product, Change, Avg Units/Week. The Change column shows the
+direction shift in plain English (e.g. "Steady -> Gaining", "Gaining -> Slowing").
+Do NOT show slope values, p-values, R-squared, or any statistical terms.
 
 ### 4. Geographic Highlights
 
@@ -223,14 +226,17 @@ trailing_avg_share_pct, shift_pp.
 
 ## Email Composition
 
-### Narrative Summary
+### Summary
 
-Write a 3-5 sentence executive summary that:
-- References ONLY numbers from your query results
-- Does NOT make recommendations ("you should order more")
-- Does NOT reference inventory levels
-- Does NOT compare to industry benchmarks
-- Uses plain business language, no jargon
+Write the summary as a bulleted list (HTML `<ul>`), maximum 6 bullets.
+Each bullet is one key takeaway referencing a specific number from your queries.
+Do NOT write a prose paragraph. Use plain business language, no jargon.
+
+Rules for bullets:
+- Reference ONLY numbers from your query results
+- Do NOT make recommendations ("you should order more")
+- Do NOT reference inventory levels
+- Do NOT compare to industry benchmarks
 
 ### HTML Email Structure
 
@@ -244,7 +250,11 @@ Body:
   <p><em>Week of {this_week_start} to {this_week_end}</em></p>
 
   <h3>Summary</h3>
-  <p>{narrative summary}</p>
+  <ul>
+    <li>Bullet 1</li>
+    <li>Bullet 2</li>
+    ...max 6 bullets
+  </ul>
 
   <!-- Only include sections that cleared thresholds -->
 
@@ -254,7 +264,7 @@ Body:
   <h3>SKU Movers</h3>
   <table>...</table>
 
-  <h3>Lifecycle Transitions</h3>
+  <h3>Trending Products</h3>
   <table>...</table>
 
   <h3>Geographic Highlights</h3>
