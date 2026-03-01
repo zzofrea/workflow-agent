@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 import structlog
 import yaml
@@ -19,6 +20,8 @@ from pydantic import BaseModel, field_validator
 from workflow_agent.config import AGENTS_DIR
 
 log = structlog.get_logger("workflow_agent.policy")
+
+SECRET_KEY_PATTERN = re.compile(r"(PASSWORD|SECRET|TOKEN|KEY)", re.IGNORECASE)
 
 
 def resolve_env_var(value: str) -> str:
@@ -55,6 +58,23 @@ def validate_password(value: str) -> str:
     )
 
 
+def validate_env_value(key: str, value: str) -> str:
+    """Validate and resolve an environment variable from a policy's environment block.
+
+    If the key matches SECRET_KEY_PATTERN (PASSWORD, SECRET, TOKEN, KEY),
+    the value must use ${VAR_NAME} syntax -- plaintext is rejected.
+    All ${VAR_NAME} values are resolved from the host environment.
+    """
+    is_env_ref = bool(re.fullmatch(r"\$\{(\w+)\}", value))
+
+    if SECRET_KEY_PATTERN.search(key) and not is_env_ref:
+        raise ValueError(
+            f"Sensitive key '{key}' must use '${{VAR_NAME}}' syntax, got plaintext: {value!r}"
+        )
+
+    return resolve_env_var(value)
+
+
 class DatabaseConfig(BaseModel):
     """A single database connection declared in a policy."""
 
@@ -81,12 +101,31 @@ class DatabaseConfig(BaseModel):
 
 
 class Policy(BaseModel):
-    """Parsed policy file: databases + tool permissions."""
+    """Parsed policy file: databases + tool permissions + custom environment."""
 
     name: str
     description: str = ""
     databases: list[DatabaseConfig] = []
     tools: list[str] = []
+    environment: dict[str, str] = {}
+
+    @field_validator("environment", mode="before")
+    @classmethod
+    def check_environment(cls, v: Any) -> dict[str, str]:
+        """Reject plaintext values for sensitive-pattern keys at parse time.
+
+        Does NOT resolve ${VAR_NAME} -- resolution happens at container launch.
+        """
+        if not isinstance(v, dict):
+            raise ValueError("environment must be a mapping of key-value pairs")
+        for key, value in v.items():
+            is_env_ref = bool(re.fullmatch(r"\$\{(\w+)\}", str(value)))
+            if SECRET_KEY_PATTERN.search(key) and not is_env_ref:
+                raise ValueError(
+                    f"Sensitive key '{key}' must use '${{VAR_NAME}}' syntax, "
+                    f"got plaintext: {value!r}"
+                )
+        return v
 
 
 def load_policy(path: str | Path) -> Policy:

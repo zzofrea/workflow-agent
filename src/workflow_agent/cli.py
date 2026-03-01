@@ -15,7 +15,12 @@ import structlog
 
 from workflow_agent.config import AGENTS_DIR
 from workflow_agent.output import archive_output, route_notifications
-from workflow_agent.policy import resolve_policy_for_service, validate_password
+from workflow_agent.policy import (
+    SECRET_KEY_PATTERN,
+    resolve_policy_for_service,
+    validate_env_value,
+    validate_password,
+)
 from workflow_agent.role import resolve_role_for_service
 from workflow_agent.runner import (
     check_container_running,
@@ -143,6 +148,19 @@ def cmd_validate(args: argparse.Namespace) -> None:
             print(f"Database [{db.name}]: {db.hostname}:{db.port}/{db.database} -- credentials OK")
         except ValueError as e:
             errors.append(f"Database [{db.name}]: credential error: {e}")
+
+    # Validate custom environment variables
+    if policy.environment:
+        print(f"Environment: {len(policy.environment)} custom var(s)")
+        for key, value in policy.environment.items():
+            try:
+                resolved = validate_env_value(key, value)
+                if SECRET_KEY_PATTERN.search(key):
+                    print(f"  {key} = ****")
+                else:
+                    print(f"  {key} = {resolved}")
+            except ValueError as e:
+                errors.append(f"Environment [{key}]: {e}")
 
     # Check spec exists if referenced
     if role.spec:

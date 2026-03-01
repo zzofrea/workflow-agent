@@ -22,7 +22,7 @@ from workflow_agent.config import (
     CONTAINER_NAME_PREFIX,
     DEFAULT_TIMEOUT,
 )
-from workflow_agent.policy import Policy, validate_password
+from workflow_agent.policy import Policy, validate_env_value, validate_password
 
 log = structlog.get_logger("workflow_agent.runner")
 
@@ -157,6 +157,17 @@ def build_env_vars(policy: Policy, role_name: str, service: str) -> list[tuple[s
 
     env_vars.append(("AGENT_SERVICE", service))
     env_vars.append(("AGENT_ROLE", role_name))
+
+    # Custom environment variables from policy
+    builtin_keys = {k for k, _ in env_vars}
+    builtin_keys.update({"AGENT_MODEL", "AGENT_MAX_TURNS", "AGENT_TOOLS", "HOME"})
+
+    for key, value in policy.environment.items():
+        if key in builtin_keys:
+            log.warning("runner.env_builtin_override_blocked", key=key)
+            continue
+        resolved = validate_env_value(key, value)
+        env_vars.append((key, resolved))
 
     return env_vars
 

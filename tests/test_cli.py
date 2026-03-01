@@ -100,6 +100,60 @@ class TestCmdValidate:
         captured = capsys.readouterr()
         assert "PASSED" in captured.out
 
+    def test_environment_vars_displayed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        agents_dir = tmp_path / "agents"
+        svc_dir = agents_dir / "test-svc"
+        (svc_dir / "roles").mkdir(parents=True)
+        (svc_dir / "policies").mkdir(parents=True)
+
+        role_yaml = textwrap.dedent("""\
+            name: test-analyst
+            policy: env-reader
+            runtime: claude-cli
+            system_prompt: "Test"
+        """)
+        (svc_dir / "roles" / "analyst.yaml").write_text(role_yaml)
+
+        policy_yaml = textwrap.dedent("""\
+            name: env-reader
+            environment:
+              SMTP_HOST: smtp.gmail.com
+              SMTP_PASSWORD: ${TEST_SMTP_PASS}
+            tools:
+              - "Read"
+        """)
+        (svc_dir / "policies" / "env-reader.yaml").write_text(policy_yaml)
+
+        monkeypatch.setattr("workflow_agent.cli.AGENTS_DIR", agents_dir)
+        monkeypatch.setattr("workflow_agent.role.AGENTS_DIR", agents_dir)
+        monkeypatch.setattr("workflow_agent.policy.AGENTS_DIR", agents_dir)
+        monkeypatch.setenv("TEST_SMTP_PASS", "secret123")
+
+        args = MagicMock()
+        args.target = "test-svc"
+        args.role = "analyst"
+
+        with (
+            patch(
+                "workflow_agent.cli.resolve_container_names",
+                return_value={},
+            ),
+            patch("workflow_agent.cli.check_container_running", return_value=True),
+        ):
+            cmd_validate(args)
+
+        captured = capsys.readouterr()
+        assert "2 custom var(s)" in captured.out
+        assert "SMTP_HOST = smtp.gmail.com" in captured.out
+        # Sensitive key should be masked
+        assert "SMTP_PASSWORD = ****" in captured.out
+        assert "secret123" not in captured.out
+
     def test_missing_role_exits(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("workflow_agent.cli.AGENTS_DIR", tmp_path)
         args = MagicMock()

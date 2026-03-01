@@ -89,6 +89,28 @@ class TestBuildEnvVars:
         assert env_dict["AGENT_SERVICE"] == "bid-scraper"
         assert env_dict["AGENT_ROLE"] == "analyst"
 
+    def test_custom_env_vars_included(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SMTP_PASS", "resolved-secret")
+        policy = _make_policy(databases=[_make_db()])
+        policy.environment = {
+            "SMTP_HOST": "smtp.gmail.com",
+            "SMTP_PASSWORD": "${SMTP_PASS}",
+        }
+        env = build_env_vars(policy, "analyst", "etl")
+        env_dict = dict(env)
+
+        assert env_dict["SMTP_HOST"] == "smtp.gmail.com"
+        assert env_dict["SMTP_PASSWORD"] == "resolved-secret"
+
+    def test_builtin_key_override_blocked(self) -> None:
+        policy = _make_policy(databases=[_make_db()])
+        policy.environment = {"AGENT_SERVICE": "hacked"}
+        env = build_env_vars(policy, "auditor", "test-service")
+        env_dict = dict(env)
+
+        # Original value preserved, not overridden
+        assert env_dict["AGENT_SERVICE"] == "test-service"
+
 
 class TestBuildDockerCmd:
     """Tests for build_docker_cmd()."""

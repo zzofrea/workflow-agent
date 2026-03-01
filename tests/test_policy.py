@@ -12,6 +12,7 @@ from workflow_agent.policy import (
     load_policy,
     resolve_env_var,
     resolve_policy_for_service,
+    validate_env_value,
     validate_password,
 )
 
@@ -174,6 +175,68 @@ class TestLoadPolicy:
         assert policy.name == "empty-policy"
         assert policy.databases == []
         assert policy.tools == []
+
+
+class TestValidateEnvValue:
+    """Tests for validate_env_value()."""
+
+    def test_literal_passthrough(self) -> None:
+        assert validate_env_value("SOME_CONFIG", "hello") == "hello"
+
+    def test_env_var_resolved(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MY_SMTP", "smtp-val")
+        assert validate_env_value("SMTP_HOST", "${MY_SMTP}") == "smtp-val"
+
+    def test_sensitive_key_rejects_plaintext(self) -> None:
+        with pytest.raises(ValueError, match="Sensitive key"):
+            validate_env_value("AGENT_SMTP_PASSWORD", "plaintext-bad")
+
+    def test_sensitive_key_accepts_env_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SMTP_PASS", "secret")
+        assert validate_env_value("AGENT_SMTP_PASSWORD", "${SMTP_PASS}") == "secret"
+
+    def test_unset_env_var_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NONEXISTENT_VAR", raising=False)
+        with pytest.raises(ValueError, match="NONEXISTENT_VAR"):
+            validate_env_value("SOME_KEY", "${NONEXISTENT_VAR}")
+
+
+class TestPolicyEnvironment:
+    """Tests for Policy.environment field."""
+
+    def test_empty_environment_default(self) -> None:
+        from workflow_agent.policy import Policy
+
+        policy = Policy(name="test")
+        assert policy.environment == {}
+
+    def test_policy_with_environment(self, tmp_path: Path) -> None:
+        yaml_content = textwrap.dedent("""\
+            name: env-test
+            environment:
+              SMTP_HOST: smtp.gmail.com
+              SMTP_PASSWORD: ${SMTP_PASS}
+            tools:
+              - "Read"
+        """)
+        policy_file = tmp_path / "env.yaml"
+        policy_file.write_text(yaml_content)
+
+        policy = load_policy(policy_file)
+        assert policy.environment["SMTP_HOST"] == "smtp.gmail.com"
+        assert policy.environment["SMTP_PASSWORD"] == "${SMTP_PASS}"
+
+    def test_plaintext_secret_rejected_at_parse(self, tmp_path: Path) -> None:
+        yaml_content = textwrap.dedent("""\
+            name: bad-env
+            environment:
+              API_TOKEN: my-plaintext-token
+        """)
+        policy_file = tmp_path / "bad.yaml"
+        policy_file.write_text(yaml_content)
+
+        with pytest.raises(ValueError, match="Sensitive key"):
+            load_policy(policy_file)
 
 
 class TestResolvePolicyForService:
