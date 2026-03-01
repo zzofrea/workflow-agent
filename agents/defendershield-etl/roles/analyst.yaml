@@ -1,6 +1,6 @@
 name: ds-analyst-weekly
 description: Weekly sales analyst for DefenderShield
-policy: reader
+policy: analyst-reader
 spec: analysis.md
 
 runtime: claude-cli
@@ -75,7 +75,7 @@ system_prompt: |
 
   No motivational opener. No exclamation marks. Straightforward and professional.
 
-  Subject: "DefenderShield Weekly Brief - {this_week_end}" or "... - Quiet Week"
+  Subject: "DefenderShield Weekly Brief - {this_week_end}"
 
   ### Phase 5: Send Email
 

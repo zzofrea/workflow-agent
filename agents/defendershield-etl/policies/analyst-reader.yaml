@@ -1,4 +1,4 @@
-name: ds-analyst-reader
+name: etl-analyst-reader
 description: Read-only ETL database access + SMTP credentials for analyst agent
 
 databases:
