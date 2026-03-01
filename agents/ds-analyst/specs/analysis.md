@@ -15,44 +15,80 @@ You MUST complete these phases in order:
 
 ---
 
-## Database Schema Reference
+## Data Dictionary
 
-Connection details are in your environment variables (PGHOST, PGPORT, PGUSER,
-PGDATABASE). Auth is trust-based (no password needed).
+Connection: env vars PGHOST, PGPORT, PGUSER, PGDATABASE. Trust auth (no password).
 
-### silver.fact_sales_items
+### silver.fact_sales_items (~209k rows)
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | integer | PK, auto-increment |
-| order_id | text | NOT NULL |
-| sku | text | NOT NULL |
-| quantity | integer | NOT NULL |
-| unit_price | numeric(10,2) | Per-unit price |
-| line_price | numeric(10,2) | quantity * unit_price |
-| marketplace | text | Raw: WooCommerce, Shopify, Amazon, AmazonUS, AmazonCA, AmazonAU, Manual |
-| status | text | Completed, ReadyToShip, Pending, Cancelled |
-| sale_date | date | Date of sale |
-| shipping_country | text | Country code or name |
-| shipping_region | text | State/province |
-| shipping_city | text | City |
-| _modified_date | date | ETL modification date |
-| item_source | text | Source system identifier |
+Individual line items from all sales channels. One row per order-sku-source-modified combination.
 
-### bronze.product_info
+- PK: `id` (serial, never query by this)
+- Unique: `(order_id, sku, item_source, _modified_date)`
+- Join key: `sku` -> `bronze.product_info.sku`
 
-| Column | Type | Notes |
-|--------|------|-------|
-| sku | text | PK |
-| classification | text | Product category |
-| short_description | text | Product name |
-| is_active | boolean | Default true |
-| cost | numeric(10,2) | Unit cost |
+| Column | Type | Description |
+|--------|------|-------------|
+| order_id | text | Order ID from source system; NOT NULL |
+| sku | text | Product SKU; NOT NULL; join to product_info |
+| quantity | int | Units sold in this line item; NOT NULL |
+| unit_price | numeric(10,2) | USD per unit; imputed via FX for Amazon intl orders |
+| line_price | numeric(10,2) | Total line USD = quantity * unit_price |
+| marketplace | text | Raw channel -- see normalization rules below |
+| status | text | `Completed` / `ReadyToShip` / `Pending` / `Cancelled` |
+| sale_date | date | Date the sale occurred |
+| shipping_country | text | Destination country (mixed: "US", "United States", country codes) |
+| shipping_region | text | State/province name or abbreviation |
+| _modified_date | date | Source modification date; drives dedup (latest wins) |
+| item_source | text | `FulfilledItems` / `MerchantItems` / `MerchantKits_Bundle` / `MerchantKits_Items` |
 
-### Critical: Deduplication
+Columns you can ignore: `id`, `sale_timestamp`, `part_number`, `shipping_city`, `_created_at`, `raw_unitprice_a`, `raw_lineprice`.
 
-The same (order_id, sku) combination can appear multiple times due to
-`_modified_date` updates. You MUST deduplicate in every query using:
+### bronze.product_info (433 rows)
+
+Product catalog from SkuVault. One row per SKU.
+
+- PK: `sku`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| sku | text | Product SKU; PK |
+| classification | text | Category: Apparel/Blanket/General/Glasses/Headphones/Laptops/Miscellaneous/Parts/Phones/Pouch/Privacy & Security/Supplement/Tablets |
+| short_description | text | Human-readable product name (use this in reports) |
+| is_active | bool | Whether product is currently sold |
+| cost | numeric(10,2) | Unit cost (for reference only, not used in analysis) |
+
+All other columns (quantities, supplier info, pricing) are inventory fields -- not relevant to this analysis.
+
+### Gotchas
+
+1. **Dedup is mandatory.** Same (order_id, sku) appears with multiple `_modified_date` values.
+   Always use: `ROW_NUMBER() OVER (PARTITION BY order_id, sku ORDER BY _modified_date DESC) AS rn` then `WHERE rn = 1`.
+2. **FX gap.** Amazon intl orders have USD prices imputed from foreign currency. ~5% revenue gap vs CSV exports is expected and normal.
+3. **Amazon source.** ~96% of Amazon orders use `FulfilledItems`, not `MerchantItems`. Do not filter by item_source.
+4. **Pending = $0.** Pending orders often have $0 prices. Always exclude them.
+5. **Country inconsistency.** US appears as both `"US"` and `"United States"`. Filter with `IN ('US', 'United States')`.
+
+### Marketplace Normalization
+
+```sql
+CASE
+  WHEN marketplace IN ('WooCommerce', 'Shopify') THEN 'Website'
+  WHEN marketplace IN ('Amazon', 'AmazonUS', 'AmazonCA', 'AmazonAU') THEN 'Amazon'
+END AS channel
+-- Filter WHERE channel IS NOT NULL (drops Manual, TransferSaleHoldsPendingQuantity)
+```
+
+### Status Filter
+
+```sql
+WHERE status IN ('Completed', 'ReadyToShip')
+-- Excludes Pending ($0 prices) and Cancelled
+```
+
+### Required Dedup CTE
+
+Use this in EVERY query:
 
 ```sql
 WITH deduped AS (
@@ -66,28 +102,35 @@ WITH deduped AS (
 SELECT ... FROM deduped WHERE rn = 1
 ```
 
-### Marketplace Normalization
-
-Normalize raw marketplace values to channels:
-- **Website**: WooCommerce, Shopify
-- **Amazon**: Amazon, AmazonUS, AmazonCA, AmazonAU
-- Exclude: Manual, TransferSaleHoldsPendingQuantity (internal transfers)
-
-Use this CASE expression:
+### Example Queries
 
 ```sql
-CASE
-  WHEN marketplace IN ('WooCommerce', 'Shopify') THEN 'Website'
-  WHEN marketplace IN ('Amazon', 'AmazonUS', 'AmazonCA', 'AmazonAU') THEN 'Amazon'
-END AS channel
+-- Weekly revenue by channel (use as template)
+WITH deduped AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY order_id, sku ORDER BY _modified_date DESC) AS rn
+  FROM silver.fact_sales_items WHERE status IN ('Completed', 'ReadyToShip')
+)
+SELECT
+  CASE WHEN marketplace IN ('WooCommerce','Shopify') THEN 'Website'
+       WHEN marketplace IN ('Amazon','AmazonUS','AmazonCA','AmazonAU') THEN 'Amazon' END AS channel,
+  SUM(line_price) AS revenue,
+  COUNT(DISTINCT order_id) AS orders
+FROM deduped WHERE rn = 1
+  AND sale_date BETWEEN '2026-02-16' AND '2026-02-22'
+  AND marketplace NOT IN ('Manual','TransferSaleHoldsPendingQuantity')
+GROUP BY 1;
+
+-- SKU units with product name
+WITH deduped AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY order_id, sku ORDER BY _modified_date DESC) AS rn
+  FROM silver.fact_sales_items WHERE status IN ('Completed', 'ReadyToShip')
+)
+SELECT d.sku, p.short_description, SUM(d.quantity) AS units
+FROM deduped d JOIN bronze.product_info p ON d.sku = p.sku
+WHERE d.rn = 1 AND d.sale_date BETWEEN '2026-02-16' AND '2026-02-22'
+  AND d.marketplace NOT IN ('Manual','TransferSaleHoldsPendingQuantity')
+GROUP BY d.sku, p.short_description ORDER BY units DESC LIMIT 10;
 ```
-
-Filter out rows where channel IS NULL (excludes Manual, transfers).
-
-### Status Filter
-
-Include ONLY: `Completed`, `ReadyToShip`
-Exclude: `Pending` (prices often $0.00), `Cancelled`
 
 ---
 
