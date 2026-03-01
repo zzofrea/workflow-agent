@@ -1,0 +1,25 @@
+name: ds-analyst-reader
+description: Read-only ETL database access + SMTP credentials for analyst agent
+
+databases:
+  - name: primary
+    type: postgres
+    hostname: ds-etl-postgres
+    port: 5432
+    database: defendershield
+    user: analyst_ro
+    password: trust
+    env_prefix: PG
+
+environment:
+  AGENT_SMTP_HOST: smtp.gmail.com
+  AGENT_SMTP_PORT: "587"
+  AGENT_SMTP_EMAIL: ${AGENT_SMTP_EMAIL}
+  AGENT_SMTP_PASSWORD: ${AGENT_SMTP_PASSWORD}
+  AGENT_RECIPIENT_LIST: ${AGENT_RECIPIENT_LIST}
+
+tools:
+  - "Read"
+  - "Bash(psql*)"
+  - "Bash(python3*)"
+  - "Bash(date*)"
