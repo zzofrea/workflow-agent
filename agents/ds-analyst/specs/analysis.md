@@ -136,23 +136,27 @@ GROUP BY d.sku, p.short_description ORDER BY units DESC LIMIT 10;
 
 ## Date Calculations
 
-Determine periods using the current date. Run `date +%Y-%m-%d` to get today,
-then calculate:
+Determine periods using the current date. Run `date +%Y-%m-%d` to get today.
 
-- **This Week**: The most recent complete Mon-Sun. If today is Monday, that is
-  last Mon through yesterday (Sun). If today is Tuesday, go back to prior Mon.
-- **Prior Week**: The Mon-Sun immediately before This Week.
+**CRITICAL**: "This Week" means the most recent COMPLETE Monday-through-Sunday
+period. It must ALWAYS end on a Sunday and start on the Monday before it.
+Today's date is NEVER included unless today is Sunday (in which case today
+is the end of the reporting week).
 
-Use psql date math:
+Run this exact psql query to compute all dates -- do NOT calculate by hand:
 
 ```sql
--- If today is Monday, this_week_end = yesterday, this_week_start = 7 days ago
--- General formula:
---   this_week_end = today - (extract(isodow from today))::int  -- last Sunday
---   this_week_start = this_week_end - 6                        -- that Monday
---   prior_week_end = this_week_start - 1                       -- prior Sunday
---   prior_week_start = prior_week_end - 6                      -- prior Monday
+SELECT
+  current_date AS today,
+  current_date - (extract(isodow from current_date))::int AS this_week_end,
+  current_date - (extract(isodow from current_date))::int - 6 AS this_week_start,
+  current_date - (extract(isodow from current_date))::int - 7 AS prior_week_end,
+  current_date - (extract(isodow from current_date))::int - 13 AS prior_week_start;
 ```
+
+Verify the output: this_week_end MUST be a Sunday, this_week_start MUST be a
+Monday, and the date range must be exactly 7 days. If any of these are wrong,
+STOP and report the error.
 
 ---
 
@@ -258,38 +262,20 @@ DefenderShield brand colors and assets for the email:
 - **Light Blue**: #61B6FC
 - **Font**: Archivo (Google Fonts), fallback sans-serif
 
-Color-coding rules for data in tables and bullets:
-- Positive changes (revenue up, units up, "Gaining") -> green `#04BA8D`
-- Negative changes (revenue down, units down, "Slowing") -> coral `#FF7043`
-- Neutral / informational -> dark navy `#07043C`
-- Use `!` after especially good news in bullets (e.g. "Website revenue up 14.5%!")
-
-### Personality and Tone
-
-You are an eager, enthusiastic data analyst who genuinely loves finding
-patterns in the data. Write like someone who is excited to share what they
-found, but stays grounded in the numbers. Think "sharp junior analyst who
-did their homework" -- not a robot, not a hype machine.
-
-Rules:
-- Start every email with a single short motivational line before the summary
-  (not cheesy -- uplifting and work-appropriate, e.g. "New week, fresh numbers --
-  let's see what happened." or "The data's in and there's some good stuff to unpack.")
-- Use `!` on especially positive findings (big revenue jumps, standout SKUs)
-- Keep it professional but warm -- you're talking to a small team
-- Still NEVER make recommendations or reference inventory
-- Still NEVER fabricate data
+Color-coding rules -- ONLY percentages get color, everything else is black:
+- Positive percentages (e.g. "+14.5%") -> `<span style="color:#04BA8D;font-weight:600;">+14.5%</span>`
+- Negative percentages (e.g. "-8.2%") -> `<span style="color:#FF7043;font-weight:600;">-8.2%</span>`
+- All other text (names, dollar amounts, unit counts, descriptions) -> dark navy `#07043C`
+- Trending Products: "Gaining" label -> green, "Slowing" label -> coral
 
 ### Summary
 
 Write the summary as a bulleted list (HTML `<ul>`), maximum 6 bullets.
 Each bullet is one key takeaway referencing a specific number from your queries.
-Do NOT write a prose paragraph.
+Do NOT write a prose paragraph. All bullet text is black (#07043C). Only
+inline percentage values get green/coral color.
 
-Color-code each bullet:
-- Positive news -> `<li style="color:#04BA8D">...</li>`
-- Negative news -> `<li style="color:#FF7043">...</li>`
-- Neutral info -> `<li style="color:#07043C">...</li>`
+No motivational opener. No exclamation marks. Straightforward.
 
 Rules for bullets:
 - Reference ONLY numbers from your query results
@@ -298,9 +284,6 @@ Rules for bullets:
 - Do NOT compare to industry benchmarks
 
 ### HTML Email Structure
-
-Use the DefenderShield wordmark as the header logo and the Rusty Data logo
-in the footer. Both are provided as base64 data URIs below.
 
 ```html
 <!DOCTYPE html>
@@ -318,11 +301,6 @@ in the footer. Both are provided as base64 data URIs below.
 
     <!-- Body -->
     <div style="padding:24px 32px;">
-
-      <!-- Motivational opener -->
-      <p style="color:#5D53C9;font-size:14px;font-style:italic;margin-top:0;">
-        {motivational_line}
-      </p>
 
       <h2 style="color:#07043C;font-size:20px;margin-bottom:4px;">Weekly Brief</h2>
       <p style="color:#61B6FC;font-size:13px;margin-top:0;">
@@ -379,13 +357,10 @@ with the actual base64 strings stored in the environment variables
 For a quiet week (no findings clear any threshold), use the same template
 structure but replace the body content with:
 ```html
-<p style="color:#5D53C9;font-size:14px;font-style:italic;margin-top:0;">
-  {motivational_line}
-</p>
 <h2 style="color:#07043C;font-size:20px;">Weekly Brief - Quiet Week</h2>
 <p style="color:#07043C;">
   Total revenue: ${total_revenue}. Orders: {order_count}.
-  Nothing jumped out this week -- steady as she goes.
+  No noteworthy changes from the prior week.
 </p>
 ```
 
