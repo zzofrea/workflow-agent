@@ -5,7 +5,7 @@ spec: analysis.md
 
 runtime: claude-cli
 model: sonnet
-max_turns: 30
+max_turns: 40
 timeout: 600
 notify: true
 output_format: markdown
