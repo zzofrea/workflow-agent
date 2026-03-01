@@ -167,25 +167,25 @@ STOP and report the error.
 Compare total revenue (SUM of line_price) and order count (COUNT DISTINCT
 order_id) by channel for This Week vs Prior Week.
 
-**Threshold**: Include this section only if any channel's WoW revenue change
-exceeds 10% in either direction.
+**Threshold**: Include this section only if any channel's week-over-week
+revenue change exceeds 10% in either direction.
 
-Output: a table showing channel, this_week_revenue, prior_week_revenue,
-wow_change_pct, this_week_orders, prior_week_orders.
+Output: a table showing channel, this week revenue, prior week revenue,
+% change, this week orders, prior week orders.
 
-### 2. SKU Movers
+### 2. Biggest Movers
 
 For each SKU, compare This Week's unit sales to the trailing 4-week average
 (the 4 complete weeks ending with Prior Week).
 
 **Thresholds**: Include a SKU only if:
-- Velocity deviation > 50% from 4-week average, AND
-- Absolute change >= 5 units
+- Unit sales changed more than 50% from the 4-week average, AND
+- The absolute change is at least 5 units
 
 **Minimum history**: Exclude SKUs with fewer than 4 weeks of sales history.
 
-Output: top 5 risers and top 5 fallers, showing SKU, product name, this_week
-units, 4wk_avg units, deviation_pct.
+Output: top 5 risers and top 5 fallers, showing SKU, product name, this week
+units, 4-week avg units, percent change.
 
 ### 3. Trending Products
 
@@ -234,17 +234,18 @@ Color-code the Trend column:
 Do NOT show slope values, p-values, R-squared, or any statistical terms.
 Do NOT show raw numbers like "2.1 Steady -> Gaining".
 
-### 4. Geographic Highlights
+### 4. Top States
 
-Compare each state/region's share of total revenue for This Week vs the
+Compare each state's share of total revenue for This Week vs the
 trailing 4-week average.
 
-**Threshold**: Include only if a state's share shifted by > 5 percentage points.
+**Threshold**: Include only if a state's share shifted by more than 5
+percentage points.
 
 Only consider US states (shipping_country = 'US' or 'United States').
 
-Output: states with notable shifts, showing state, this_week_share_pct,
-trailing_avg_share_pct, shift_pp.
+Output: states with notable shifts, showing state, this week share %,
+4-week avg share %, change in percentage points.
 
 ---
 
@@ -302,11 +303,6 @@ Rules for bullets:
     <!-- Body -->
     <div style="padding:24px 32px;">
 
-      <h2 style="color:#07043C;font-size:20px;margin-bottom:4px;">Weekly Brief</h2>
-      <p style="color:#61B6FC;font-size:13px;margin-top:0;">
-        Week of {this_week_start} to {this_week_end}
-      </p>
-
       <h3 style="color:#0553DF;font-size:16px;border-bottom:2px solid #0553DF;padding-bottom:4px;">
         Summary
       </h3>
@@ -322,7 +318,7 @@ Rules for bullets:
       <!-- table -->
 
       <h3 style="color:#0553DF;font-size:16px;border-bottom:2px solid #0553DF;padding-bottom:4px;">
-        SKU Movers
+        Biggest Movers
       </h3>
       <!-- table -->
 
@@ -332,7 +328,7 @@ Rules for bullets:
       <!-- table -->
 
       <h3 style="color:#0553DF;font-size:16px;border-bottom:2px solid #0553DF;padding-bottom:4px;">
-        Geographic Highlights
+        Top States
       </h3>
       <!-- table -->
 
@@ -357,7 +353,6 @@ with the actual base64 strings stored in the environment variables
 For a quiet week (no findings clear any threshold), use the same template
 structure but replace the body content with:
 ```html
-<h2 style="color:#07043C;font-size:20px;">Weekly Brief - Quiet Week</h2>
 <p style="color:#07043C;">
   Total revenue: ${total_revenue}. Orders: {order_count}.
   No noteworthy changes from the prior week.

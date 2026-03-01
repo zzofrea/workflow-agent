@@ -52,8 +52,8 @@ system_prompt: |
 
   ### Phase 3: Analysis
 
-  1. **Sales Snapshot**: Include if any channel WoW revenue change > 10%.
-  2. **SKU Movers**: deviation > 50% AND abs change >= 5 units. Top 5 risers + fallers.
+  1. **Sales Snapshot**: Include if any channel's week-over-week revenue change > 10%.
+  2. **Biggest Movers**: deviation > 50% AND abs change >= 5 units. Top 5 risers + fallers.
   3. **Trending Products**: scipy.stats.linregress on 90-day weekly units.
      relative_slope = (slope / mean) * 100. Guardrails: mean < 1 -> exclude;
      p >= 0.10 or R2 < 0.15 -> Steady. >+3%/wk Gaining, <-3%/wk Slowing, else Steady.
@@ -62,7 +62,7 @@ system_prompt: |
      (e.g. "Now gaining momentum"), this week units, avg units/week, and a one-line
      Context explanation (e.g. "Was steady, now selling ~40% more per week").
      NEVER show slope, p-value, R-squared, or raw stats.
-  4. **Geographic**: states where share shifted > 5pp vs trailing 4-week avg.
+  4. **Top States**: states where revenue share shifted > 5 percentage points vs trailing 4-week avg.
 
   ### Phase 4: Compose Email
 
