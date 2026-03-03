@@ -57,8 +57,10 @@ Product catalog from SkuVault. One row per SKU.
 | short_description | text | Human-readable product name (use this in reports) |
 | is_active | bool | Whether product is currently sold |
 | cost | numeric(10,2) | Unit cost (for reference only, not used in analysis) |
+| created_date_utc | timestamptz | When the product was first added to SkuVault; used to identify new products |
+| quantity_available | int | Units currently available to sell across all channels; 0 = out of stock |
 
-All other columns (quantities, supplier info, pricing) are inventory fields -- not relevant to this analysis.
+All other columns (other quantities, supplier info, pricing) are inventory fields -- not relevant to this analysis.
 
 ### Gotchas
 
@@ -187,54 +189,7 @@ For each SKU, compare This Week's unit sales to the trailing 4-week average
 Output: top 5 risers and top 5 fallers, showing SKU, product name, this week
 units, 4-week avg units, percent change.
 
-### 3. Trending Products
-
-Identifies products whose sales momentum shifted this week. Uses 90-day
-weekly sales data to detect whether a product is gaining, slowing, or steady.
-
-**Calculation** (internal -- do not expose stats in the email):
-
-1. Aggregate weekly units for each SKU over the past 90 days (~13 data points).
-2. Use python3 with scipy.stats.linregress to compute slope, p-value, R-squared.
-3. Compute relative slope: `(slope / mean_weekly_units) * 100`.
-4. Apply guardrails:
-   - Mean weekly volume < 1 unit -> exclude (too low volume to be meaningful)
-   - p-value >= 0.10 OR R-squared < 0.15 -> "Steady" (not enough confidence)
-5. Classify:
-   - Relative slope > +3%/week -> "Gaining"
-   - Relative slope < -3%/week -> "Slowing"
-   - Otherwise -> "Steady"
-
-**Threshold**: Include this section only if at least one SKU changed direction
-compared to the prior week's classification (run the same analysis for the
-90-day window ending at prior_week_end and compare).
-
-**Email output**: Label the section "Trending Products". Show a table with columns:
-
-| Column | Description |
-|--------|-------------|
-| Product | The short_description from product_info (human-readable name) |
-| Trend | A plain-English phrase: "Now gaining momentum", "Starting to slow down", "Picking back up", or "Leveling off" |
-| This Week | Units sold this week |
-| Avg/Week | The 90-day weekly average |
-| Context | A one-line explanation like "Was steady, now selling 40% more per week" |
-
-The Context column is critical -- it tells the reader WHY this product is
-flagged. Use the relative slope to compute a human-readable percentage change
-rate. Example contexts:
-- "Was steady, now selling ~40% more per week over 90 days"
-- "Was gaining, now leveling off at ~15 units/week"
-- "Demand dropped ~30% per week over the last 90 days"
-
-Color-code the Trend column:
-- Gaining momentum -> green `#04BA8D`
-- Slowing down -> coral `#FF7043`
-- Leveling off / picking back up -> navy `#07043C`
-
-Do NOT show slope values, p-values, R-squared, or any statistical terms.
-Do NOT show raw numbers like "2.1 Steady -> Gaining".
-
-### 4. Top States
+### 3. Top States
 
 Compare each state's share of total revenue for This Week vs the
 trailing 4-week average.
@@ -246,6 +201,129 @@ Only consider US states (shipping_country = 'US' or 'United States').
 
 Output: states with notable shifts, showing state, this week share %,
 4-week avg share %, change in percentage points.
+
+### 4. New Product Performance
+
+Tracks products launched within the last 90 days. A product is "new" if its
+`created_date_utc` in `bronze.product_info` falls within 90 days of
+`this_week_end`.
+
+**Filter**: `is_active = true` AND `created_date_utc >= this_week_end - 89 days`
+AND `quantity_available > 0`.
+Exclude classifications `'Miscellaneous'` and `'Parts'` (non-sellable SKUs).
+
+**Threshold**: Always include this section if at least one new product exists.
+If no new products exist, omit the section entirely.
+
+**Query approach**:
+
+1. Identify all new SKUs from `bronze.product_info` matching the filter above.
+2. For each new SKU, query `silver.fact_sales_items` (with dedup CTE) to get:
+   - Total units and revenue since the product's `created_date_utc::date`
+   - This week's units and revenue
+   - Number of distinct weeks with at least one sale (sell-through weeks)
+3. Compute derived metrics in the query or post-processing:
+   - **Days since launch**: `this_week_end - created_date_utc::date`
+   - **Units per week**: total units / (days since launch / 7.0), rounded to 1 decimal
+   - **Sell-through rate**: sell-through weeks / total weeks since launch, as a percentage
+
+**Email output**: Label the section "New Product Performance". Show a table:
+
+| Column | Description |
+|--------|-------------|
+| Product | `short_description` from product_info |
+| In Stock | `quantity_available` from product_info |
+| Launched | The `created_date_utc` formatted as YYYY-MM-DD |
+| Days Live | Days since launch |
+| Units (Total) | Total units sold since launch |
+| Revenue (Total) | Total revenue since launch, formatted $X,XXX.XX |
+| This Week Units | Units sold this week (0 if none) |
+| Units/Week | Average units per week since launch |
+| Sell-Through | Percentage of weeks with at least one sale |
+
+Sort by `Revenue (Total)` descending.
+
+Color-code the **Sell-Through** column:
+- >= 75% -> green `#04BA8D` (strong early traction)
+- 25%-74% -> navy `#07043C` (moderate)
+- < 25% -> coral `#FF7043` (weak early traction)
+
+Color-code **This Week Units**:
+- 0 -> coral `#FF7043`
+- > 0 -> default navy `#07043C`
+
+### 5. In Stock - Low Performance
+
+Identifies active, in-stock products with weak or zero sales. This surfaces
+SKUs tying up inventory capital without generating revenue.
+
+**Filter**: From `bronze.product_info`, select SKUs where:
+- `is_active = true`
+- `quantity_available > 0`
+- `classification NOT IN ('Miscellaneous', 'Parts')`
+- **Must have at least one historical sale** (EXISTS in deduped fact_sales_items).
+  Products that have NEVER sold are not "low performing" and must be excluded.
+
+**Query approach**:
+
+**CRITICAL**: The final result MUST have exactly one row per SKU. All joins to
+fact_sales_items must be pre-aggregated into subqueries grouped by SKU before
+joining to product_info. Do NOT join product_info directly to raw or deduped
+fact_sales_items rows -- this fans out and creates duplicates.
+
+1. Get the filtered product list with `sku`, `short_description`,
+   `quantity_available` from `bronze.product_info`.
+2. Inner-join to a subquery (grouped by `sku`) that computes the last sale date
+   per SKU: `SELECT sku, MAX(sale_date) AS last_sale FROM deduped WHERE rn = 1 GROUP BY sku`.
+   This join inherently excludes SKUs with zero lifetime sales.
+3. Left-join to a second subquery (grouped by `sku`) for the trailing 4-week
+   period (`prior_week_start - 21 days` through `this_week_end`):
+   `SELECT sku, SUM(quantity) AS units_4wk, SUM(line_price) AS rev_4wk,
+   SUM(CASE WHEN sale_date BETWEEN this_week_start AND this_week_end THEN quantity ELSE 0 END) AS units_this_wk
+   FROM deduped WHERE rn = 1 AND sale_date BETWEEN trailing_4wk_start AND this_week_end GROUP BY sku`.
+
+Verify the row count matches the number of distinct SKUs before proceeding to
+classification.
+
+**Classification tiers** (applied after the query):
+
+- **Zero Sales (4 weeks)**: 0 units sold in the entire trailing 4-week window.
+  These are the highest-priority flags.
+- **Zero Sales (This Week)**: > 0 units in trailing 4 weeks but 0 units this
+  specific week. Only include if trailing 4-week average is also below 2
+  units/week (to avoid flagging products with normal weekly variance).
+- **Low Velocity**: Sold > 0 units this week but trailing 4-week average is
+  below 1 unit/week.
+
+**Threshold**: Include this section if at least one SKU qualifies for any tier.
+
+**Email output**: Label the section "In Stock - Low Performance". Show a table
+with products grouped by tier. Within each tier, sort by `quantity_available`
+descending (largest idle inventory first).
+
+| Column | Description |
+|--------|-------------|
+| SKU | The `sku` from product_info (multiple SKUs can share a product name) |
+| Product | `short_description` from product_info |
+| Status | Tier label: "No Sales (4 wk)", "No Sales (This Wk)", or "Low Velocity" |
+| In Stock | `quantity_available` from product_info |
+| Last Sale | Most recent sale_date, formatted YYYY-MM-DD |
+| 4-Wk Units | Total units sold in trailing 4 weeks |
+| 4-Wk Revenue | Total revenue in trailing 4 weeks, formatted $X,XXX.XX |
+
+Cap the table at 8 rows maximum. If more than 8 SKUs qualify, show the top
+8 by `quantity_available` descending and add a note below the table:
+"Showing top 8 of {N} low-performing in-stock SKUs."
+
+Color-code the **Status** column:
+- "No Sales (4 wk)" -> coral `#FF7043` with bold
+- "No Sales (This Wk)" -> coral `#FF7043`
+- "Low Velocity" -> navy `#07043C`
+
+Color-code the **Last Sale** column:
+- Over 30 days ago -> coral `#FF7043`
+- 15-30 days ago -> navy `#07043C`
+- Under 15 days ago -> default (no special color)
 
 ---
 
@@ -267,7 +345,8 @@ Color-coding rules -- ONLY percentages get color, everything else is black:
 - Positive percentages (e.g. "+14.5%") -> `<span style="color:#04BA8D;font-weight:600;">+14.5%</span>`
 - Negative percentages (e.g. "-8.2%") -> `<span style="color:#FF7043;font-weight:600;">-8.2%</span>`
 - All other text (names, dollar amounts, unit counts, descriptions) -> dark navy `#07043C`
-- Trending Products: "Gaining" label -> green, "Slowing" label -> coral
+- New Product Performance: Sell-Through >= 75% -> green, < 25% -> coral
+- In Stock - Low Performance: "No Sales" status -> coral, "Low Velocity" -> navy
 
 ### Summary
 
@@ -281,7 +360,7 @@ No motivational opener. No exclamation marks. Straightforward.
 Rules for bullets:
 - Reference ONLY numbers from your query results
 - Do NOT make recommendations ("you should order more")
-- Do NOT reference inventory levels
+- Do NOT reference inventory levels except for the In Stock - Low Performance section
 - Do NOT compare to industry benchmarks
 
 ### HTML Email Structure
@@ -297,7 +376,13 @@ Rules for bullets:
 
     <!-- Header -->
     <div style="background:#07043C;padding:24px 32px;text-align:left;">
-      <span style="color:#ffffff;font-family:Archivo,sans-serif;font-size:20px;font-weight:700;letter-spacing:1px;">DefenderShield</span>
+      <img src="https://defendershield.com/cdn/shop/files/DS-Logo-M.svg?v=1743535191&width=600"
+           alt="DefenderShield"
+           style="max-width:220px;height:auto;display:block;margin-bottom:12px;"
+           onerror="this.style.display='none';this.nextElementSibling.style.marginTop='0';" />
+      <p style="color:#ffffff;font-family:'Archivo',sans-serif;font-size:14px;font-weight:400;margin:0;letter-spacing:0.5px;">
+        Weekly Sales Brief &mdash; {this_week_start} to {this_week_end}
+      </p>
     </div>
 
     <!-- Body -->
@@ -323,12 +408,17 @@ Rules for bullets:
       <!-- table -->
 
       <h3 style="color:#0553DF;font-size:16px;border-bottom:2px solid #0553DF;padding-bottom:4px;">
-        Trending Products
+        Top States
       </h3>
       <!-- table -->
 
       <h3 style="color:#0553DF;font-size:16px;border-bottom:2px solid #0553DF;padding-bottom:4px;">
-        Top States
+        New Product Performance
+      </h3>
+      <!-- table -->
+
+      <h3 style="color:#0553DF;font-size:16px;border-bottom:2px solid #0553DF;padding-bottom:4px;">
+        In Stock - Low Performance
       </h3>
       <!-- table -->
 
@@ -347,8 +437,10 @@ Rules for bullets:
 </html>
 ```
 
-with the actual base64 strings stored in the environment variables
-`DS_LOGO_BASE64` and `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`.
+**Logo note**: The header `<img>` tag loads the DefenderShield logo from their
+Shopify CDN. The `onerror` fallback renders the text "DefenderShield" if the
+image fails to load. Do NOT replace this with a base64 string.
+
 
 For a quiet week (no findings clear any threshold), use the same template
 structure but replace the body content with:
