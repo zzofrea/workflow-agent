@@ -71,6 +71,7 @@ def route_notifications(
                 service=service,
                 severity="success",
                 message=f"Agent [{role_name}] PASSED: {report.get('summary', '')}",
+                channel="agent_logs",
             )
         elif overall == "complete":
             fanout(
@@ -78,6 +79,7 @@ def route_notifications(
                 service=service,
                 severity="success",
                 message=f"Agent [{role_name}] completed: {report.get('summary', '')}",
+                channel="agent_logs",
             )
         elif overall == "fail":
             failures = [s for s in report.get("scenarios", []) if s.get("status") == "fail"]
@@ -93,6 +95,7 @@ def route_notifications(
                 observation=f"Agent failed: {report.get('summary', '')}",
                 evidence=failure_details,
                 suggested_action="Review agent report and investigate",
+                channel="agent_logs",
             )
         elif overall in ("error", "incomplete"):
             fanout(
@@ -103,6 +106,7 @@ def route_notifications(
                 observation=f"Agent {overall}: {report.get('summary', '')}",
                 evidence=report.get("incomplete_reason", "See report for details"),
                 suggested_action="Check agent logs and re-run",
+                channel="agent_logs",
             )
     except Exception:
         log.exception("output.notify_failed", service=service, role=role_name)
