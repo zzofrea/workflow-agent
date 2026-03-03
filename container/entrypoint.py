@@ -86,8 +86,14 @@ def run_claude_cli(
     tools: str,
     model: str = "sonnet",
     max_turns: int = 50,
+    retries: int = 2,
+    retry_delay: float = 10.0,
 ) -> tuple[str, float]:
-    """Invoke Claude CLI and return (output_text, duration_seconds)."""
+    """Invoke Claude CLI and return (output_text, duration_seconds).
+
+    Retries on transient failures (non-zero exit with empty stdout) up to
+    ``retries`` times, waiting ``retry_delay`` seconds between attempts.
+    """
     cmd = [
         "claude",
         "--print",
@@ -106,20 +112,44 @@ def run_claude_cli(
     if max_turns > 0:
         cmd.extend(["--max-turns", str(max_turns)])
 
-    start = time.monotonic()
-    result = subprocess.run(
-        cmd,
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
-    duration = time.monotonic() - start
+    total_duration = 0.0
+    result: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(1 + max(retries, 0)):
+        start = time.monotonic()
+        result = subprocess.run(
+            cmd,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        elapsed = time.monotonic() - start
+        total_duration += elapsed
 
-    if result.returncode != 0:
-        print(f"Claude CLI stderr: {result.stderr}", file=sys.stderr)
+        # Success or non-empty output -- return immediately
+        if result.returncode == 0 or result.stdout.strip():
+            if result.returncode != 0:
+                print(f"Claude CLI stderr: {result.stderr}", file=sys.stderr)
+            return result.stdout, total_duration
 
-    return result.stdout, duration
+        # Transient failure: non-zero exit with empty stdout
+        if attempt < retries:
+            print(
+                f"Claude CLI returned empty output (exit {result.returncode}), "
+                f"retrying in {retry_delay}s (attempt {attempt + 1}/{retries})...",
+                file=sys.stderr,
+            )
+            time.sleep(retry_delay)
+        else:
+            print(
+                f"Claude CLI failed after {1 + retries} attempts "
+                f"(exit {result.returncode}): {result.stderr}",
+                file=sys.stderr,
+            )
+            return result.stdout, total_duration
+
+    # Unreachable: loop always executes at least once and returns above
+    return "", total_duration
 
 
 def parse_json_output(raw_output: str) -> dict | None:

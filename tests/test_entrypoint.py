@@ -24,6 +24,7 @@ from entrypoint import (
     parse_json_output,
     read_role_config,
     read_spec,
+    run_claude_cli,
     setup_claude_auth,
 )
 
@@ -203,6 +204,56 @@ class TestBuildMarkdownReport:
         }
         md = build_markdown_report(report)
         assert "# Analysis" in md
+
+
+class TestRunClaudeCliRetry:
+    """Tests for run_claude_cli() retry logic."""
+
+    @patch("entrypoint.subprocess.run")
+    def test_succeeds_first_try(self, mock_run: object) -> None:
+        import subprocess as _sp
+
+        mock_run.return_value = _sp.CompletedProcess(  # type: ignore[attr-defined]
+            args=[], returncode=0, stdout='{"scenarios":[]}', stderr=""
+        )
+        output, _ = run_claude_cli("p", "s", "Read", retries=2)
+        assert output == '{"scenarios":[]}'
+        assert mock_run.call_count == 1  # type: ignore[attr-defined]
+
+    @patch("entrypoint.time.sleep")
+    @patch("entrypoint.subprocess.run")
+    def test_retries_on_empty_output(self, mock_run: object, mock_sleep: object) -> None:
+        import subprocess as _sp
+
+        fail = _sp.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
+        success = _sp.CompletedProcess(args=[], returncode=0, stdout='{"scenarios":[]}', stderr="")
+        mock_run.side_effect = [fail, success]  # type: ignore[attr-defined]
+        output, _ = run_claude_cli("p", "s", "Read", retries=2, retry_delay=0.0)
+        assert output == '{"scenarios":[]}'
+        assert mock_run.call_count == 2  # type: ignore[attr-defined]
+        mock_sleep.assert_called_once_with(0.0)  # type: ignore[attr-defined]
+
+    @patch("entrypoint.time.sleep")
+    @patch("entrypoint.subprocess.run")
+    def test_exhausts_retries(self, mock_run: object, mock_sleep: object) -> None:
+        import subprocess as _sp
+
+        fail = _sp.CompletedProcess(args=[], returncode=1, stdout="", stderr="api error")
+        mock_run.return_value = fail  # type: ignore[attr-defined]
+        output, _ = run_claude_cli("p", "s", "Read", retries=1, retry_delay=0.0)
+        assert output == ""
+        assert mock_run.call_count == 2  # type: ignore[attr-defined]
+
+    @patch("entrypoint.subprocess.run")
+    def test_nonzero_exit_with_output_returns_immediately(self, mock_run: object) -> None:
+        import subprocess as _sp
+
+        mock_run.return_value = _sp.CompletedProcess(  # type: ignore[attr-defined]
+            args=[], returncode=1, stdout="partial output", stderr="warn"
+        )
+        output, _ = run_claude_cli("p", "s", "Read", retries=2)
+        assert output == "partial output"
+        assert mock_run.call_count == 1  # type: ignore[attr-defined]
 
 
 class TestDispatchRuntime:
