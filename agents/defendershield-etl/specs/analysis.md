@@ -261,8 +261,12 @@ SKUs tying up inventory capital without generating revenue.
 - `is_active = true`
 - `quantity_available > 0`
 - `classification NOT IN ('Miscellaneous', 'Parts')`
+- `sku NOT IN ('Misc. - Universal Wallet Case metal adhesives', 'Misc', 'misc. - accessory package', 'total-discount', 'EJ-T48I-OVRN')`
 - **Must have at least one historical sale** (EXISTS in deduped fact_sales_items).
   Products that have NEVER sold are not "low performing" and must be excluded.
+- **12-month recency floor**: Exclude SKUs whose most recent sale is more than
+  12 months before `this_week_end`. Stale inventory that hasn't sold in over a
+  year is a catalog/SkuVault cleanup issue, not a weekly performance signal.
 
 **Query approach**:
 
@@ -276,6 +280,8 @@ fact_sales_items rows -- this fans out and creates duplicates.
 2. Inner-join to a subquery (grouped by `sku`) that computes the last sale date
    per SKU: `SELECT sku, MAX(sale_date) AS last_sale FROM deduped WHERE rn = 1 GROUP BY sku`.
    This join inherently excludes SKUs with zero lifetime sales.
+   **Also filter**: `last_sale >= this_week_end - INTERVAL '12 months'` to enforce
+   the recency floor.
 3. Left-join to a second subquery (grouped by `sku`) for the trailing 4-week
    period (`prior_week_start - 21 days` through `this_week_end`):
    `SELECT sku, SUM(quantity) AS units_4wk, SUM(line_price) AS rev_4wk,
