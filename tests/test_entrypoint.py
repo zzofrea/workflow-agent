@@ -17,6 +17,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "container"))
 
 from entrypoint import (
+    _build_markdown_output,
     build_markdown_report,
     build_output,
     build_prompt,
@@ -266,3 +267,72 @@ class TestDispatchRuntime:
     @patch("entrypoint._run_claude_cli_runtime")
     def test_claude_cli_dispatched(self, mock_run: object) -> None:
         dispatch_runtime("claude-cli", {"model": "sonnet"}, "spec")
+
+
+class TestMetricsMerge:
+    """Tests for metrics.json merge in _build_markdown_output()."""
+
+    def test_metrics_merged_on_pass(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        metrics = {
+            "this_week_revenue": 56769.43,
+            "prior_week_revenue": 60341.14,
+            "wow_change_pct": -5.9,
+            "channel_breakdown": {
+                "Website": {"this_week": 25975.08, "prior_week": 31407.55},
+                "Amazon": {"this_week": 30794.35, "prior_week": 28933.59},
+            },
+            "this_week_orders": 575,
+            "prior_week_orders": 590,
+            "movers_risers_count": 15,
+            "movers_fallers_count": 3,
+            "low_performers_count": 7,
+            "fact_check_passed": True,
+        }
+        (tmp_path / "metrics.json").write_text(json.dumps(metrics))
+        monkeypatch.setattr("entrypoint.OUTPUT_DIR", str(tmp_path))
+
+        report = _build_markdown_output("# Report", "analyst", "etl", "sonnet", 10.0, "2026-03-09")
+        assert "metrics" in report
+        assert report["metrics"]["fact_check_passed"] is True
+        assert report["overall"] == "complete"
+
+    def test_metrics_override_on_fail(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        metrics = {
+            "this_week_revenue": 50415.90,
+            "fact_check_passed": False,
+            "discrepancies": [
+                {
+                    "metric": "this_week_revenue",
+                    "metrics_value": 50415.90,
+                    "fc_value": 56769.43,
+                    "pct_diff": 11.2,
+                }
+            ],
+        }
+        (tmp_path / "metrics.json").write_text(json.dumps(metrics))
+        monkeypatch.setattr("entrypoint.OUTPUT_DIR", str(tmp_path))
+
+        report = _build_markdown_output("# Report", "analyst", "etl", "sonnet", 10.0, "2026-03-09")
+        assert report["overall"] == "error"
+        assert "1 discrepancy" in report["summary"]
+
+    def test_missing_metrics_no_change(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("entrypoint.OUTPUT_DIR", str(tmp_path))
+
+        report = _build_markdown_output("# Report", "analyst", "etl", "sonnet", 10.0, "2026-03-09")
+        assert "metrics" not in report
+        assert report["overall"] == "complete"
+
+    def test_malformed_metrics_sets_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "metrics.json").write_text("not valid json {{{")
+        monkeypatch.setattr("entrypoint.OUTPUT_DIR", str(tmp_path))
+
+        report = _build_markdown_output("# Report", "analyst", "etl", "sonnet", 10.0, "2026-03-09")
+        assert report["overall"] == "error"
+        assert "Failed to read metrics.json" in report["summary"]

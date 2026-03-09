@@ -266,7 +266,7 @@ def _build_markdown_output(
     now: str,
 ) -> dict:
     """Build output for markdown-format roles."""
-    return {
+    report: dict = {
         "role": role_name,
         "service": service,
         "date": now,
@@ -276,6 +276,24 @@ def _build_markdown_output(
         "content": raw_output,
         "summary": f"{role_name} report for {service}",
     }
+
+    metrics_path = os.path.join(OUTPUT_DIR, "metrics.json")
+    if os.path.exists(metrics_path):
+        try:
+            with open(metrics_path) as f:
+                metrics = json.load(f)
+            report["metrics"] = metrics
+            if metrics.get("fact_check_passed") is False:
+                report["overall"] = "error"
+                report["summary"] = (
+                    f"Fact-check failed: {len(metrics.get('discrepancies', []))} "
+                    f"discrepancy(ies) found. Email not sent."
+                )
+        except (json.JSONDecodeError, OSError) as exc:
+            report["overall"] = "error"
+            report["summary"] = f"Failed to read metrics.json: {exc}"
+
+    return report
 
 
 def _build_text_output(

@@ -10,8 +10,10 @@ You MUST complete these phases in order:
 
 1. **Query** -- run psql queries to extract all required data
 2. **Analyze** -- evaluate findings against significance thresholds
-3. **Compose** -- write a narrative summary referencing ONLY queried numbers
-4. **Send** -- deliver the HTML email via SMTP
+3. **Compose** -- write the HTML email and save to `/agent/output/email.html`
+4. **Structured Metrics** -- write `/agent/output/metrics.json` from query results
+5. **Fact-Check** -- re-run validation SQL, compare to metrics.json
+6. **Send** -- deliver the HTML email via SMTP (ONLY if fact-check passed)
 
 ---
 
@@ -513,6 +515,170 @@ with smtplib.SMTP(smtp_host, smtp_port) as server:
     server.starttls()
     server.login(smtp_email, smtp_password)
     server.sendmail(smtp_email, recipients, msg.as_string())
+```
+
+---
+
+## Phase 3 Addendum: Save Email HTML
+
+After composing the HTML email, you MUST write it to `/agent/output/email.html`
+before proceeding to the next phase. This preserves the email regardless of
+whether the fact-check passes or fails.
+
+```bash
+cat > /agent/output/email.html << 'EMAIL_EOF'
+{paste the complete HTML email here}
+EMAIL_EOF
+```
+
+---
+
+## Phase 4: Structured Metrics
+
+Immediately after saving the email HTML, write `/agent/output/metrics.json`
+containing structured figures from the SAME query results you used to compose
+the email. Use this exact schema:
+
+```json
+{
+  "this_week_revenue": ...,
+  "prior_week_revenue": ...,
+  "wow_change_pct": ...,
+  "channel_breakdown": {
+    "Website": {"this_week": ..., "prior_week": ...},
+    "Amazon": {"this_week": ..., "prior_week": ...}
+  },
+  "this_week_orders": ...,
+  "prior_week_orders": ...,
+  "movers_risers_count": ...,
+  "movers_fallers_count": ...,
+  "low_performers_count": ...,
+  "fact_check_passed": null
+}
+```
+
+All numeric values must be the exact figures from your query results -- do NOT
+round, estimate, or recalculate. The `fact_check_passed` field starts as `null`
+and is updated after the fact-check phase.
+
+Write it using this Bash command:
+
+```bash
+cat > /agent/output/metrics.json << 'METRICS_EOF'
+{paste the JSON here with actual values}
+METRICS_EOF
+```
+
+---
+
+## Phase 5: Fact-Check
+
+Run these EXACT SQL queries (substituting the date variables you computed in
+Phase 1) and compare results against metrics.json. Do NOT modify these queries.
+
+### FC-1: Total revenue and orders by period
+
+```sql
+WITH deduped AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY order_id, sku ORDER BY _modified_date DESC
+  ) AS rn
+  FROM silver.fact_sales_items
+  WHERE status IN ('Completed', 'ReadyToShip')
+)
+SELECT
+  CASE
+    WHEN sale_date BETWEEN '{this_week_start}' AND '{this_week_end}' THEN 'this_week'
+    WHEN sale_date BETWEEN '{prior_week_start}' AND '{prior_week_end}' THEN 'prior_week'
+  END AS period,
+  ROUND(SUM(line_price)::numeric, 2) AS total_revenue,
+  COUNT(DISTINCT order_id) AS orders
+FROM deduped
+WHERE rn = 1
+  AND sale_date BETWEEN '{prior_week_start}' AND '{this_week_end}'
+  AND marketplace NOT IN ('Manual', 'TransferSaleHoldsPendingQuantity')
+GROUP BY 1 ORDER BY 1;
+```
+
+### FC-2: Revenue by channel by period
+
+```sql
+WITH deduped AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY order_id, sku ORDER BY _modified_date DESC
+  ) AS rn
+  FROM silver.fact_sales_items
+  WHERE status IN ('Completed', 'ReadyToShip')
+)
+SELECT
+  CASE
+    WHEN sale_date BETWEEN '{this_week_start}' AND '{this_week_end}' THEN 'this_week'
+    WHEN sale_date BETWEEN '{prior_week_start}' AND '{prior_week_end}' THEN 'prior_week'
+  END AS period,
+  CASE
+    WHEN marketplace IN ('WooCommerce', 'Shopify') THEN 'Website'
+    WHEN marketplace IN ('Amazon', 'AmazonUS', 'AmazonCA', 'AmazonAU') THEN 'Amazon'
+  END AS channel,
+  ROUND(SUM(line_price)::numeric, 2) AS revenue
+FROM deduped
+WHERE rn = 1
+  AND sale_date BETWEEN '{prior_week_start}' AND '{this_week_end}'
+  AND marketplace NOT IN ('Manual', 'TransferSaleHoldsPendingQuantity')
+GROUP BY 1, 2 ORDER BY 1, 2;
+```
+
+### Comparison Rules
+
+For each metric, compute: `abs(metrics_value - fc_value) / fc_value`
+
+If this ratio exceeds 0.005 (0.5%) for ANY metric, the fact-check FAILS.
+
+Metrics to validate (all 8 must pass):
+
+| FC Query | FC Row | Metric in metrics.json |
+|----------|--------|----------------------|
+| FC-1 | this_week / total_revenue | `this_week_revenue` |
+| FC-1 | this_week / orders | `this_week_orders` |
+| FC-1 | prior_week / total_revenue | `prior_week_revenue` |
+| FC-1 | prior_week / orders | `prior_week_orders` |
+| FC-2 | this_week / Website | `channel_breakdown.Website.this_week` |
+| FC-2 | this_week / Amazon | `channel_breakdown.Amazon.this_week` |
+| FC-2 | prior_week / Website | `channel_breakdown.Website.prior_week` |
+| FC-2 | prior_week / Amazon | `channel_breakdown.Amazon.prior_week` |
+
+After comparison, update metrics.json:
+- If ALL checks pass: set `fact_check_passed` to `true`
+- If ANY check fails: set `fact_check_passed` to `false` and add a
+  `"discrepancies"` array listing each failed check:
+
+```json
+{
+  "discrepancies": [
+    {
+      "metric": "this_week_revenue",
+      "metrics_value": 50415.90,
+      "fc_value": 56769.43,
+      "pct_diff": 11.2
+    }
+  ]
+}
+```
+
+---
+
+## Phase 6: Send (Conditional)
+
+**This replaces the unconditional send.** Check the fact-check result before
+sending:
+
+```
+IF fact_check_passed is true:
+  Read the email HTML from /agent/output/email.html
+  Send via SMTP using the existing delivery code below
+ELSE:
+  Do NOT send the email
+  Print: "FACT-CHECK FAILED: Email saved to /agent/output/email.html but not sent."
+  Print each discrepancy from metrics.json
 ```
 
 ---
