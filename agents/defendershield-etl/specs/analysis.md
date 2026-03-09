@@ -384,18 +384,32 @@ Color-coding rules -- ONLY percentages get color, everything else is black:
 
 ### Summary
 
-Write the summary as a bulleted list (HTML `<ul>`), maximum 6 bullets.
-Each bullet is one key takeaway referencing a specific number from your queries.
-Do NOT write a prose paragraph. All bullet text is black (#07043C). Only
-inline percentage values get green/coral color.
+Write the summary as a bulleted list (HTML `<ul>`), maximum 5 bullets.
+Each bullet is one punchy takeaway -- short, direct, no filler. All bullet
+text is black (#07043C). Only inline percentage values get green/coral color.
 
-No motivational opener. No exclamation marks. Straightforward.
+**Style rules -- keep bullets tight:**
+- Lead with the current number and direction, not the comparison.
+  GOOD: "Total revenue $56,769.43 across 575 orders, down -5.9% WoW"
+  BAD:  "Total revenue was $56,769.43 this week (-5.9%), on 575 orders, down from $60,341.14 and 590 orders the prior week."
+- Do NOT restate prior-week figures -- the tables already show both weeks.
+  GOOD: "Website revenue dropped -17.3% to $25,975.08"
+  BAD:  "Website revenue declined -17.3% week-over-week, from $31,407.55 to $25,975.08"
+- One number per bullet. If a bullet has more than two dollar amounts or
+  two unit counts, it's too verbose -- split or trim.
+- Mover bullets: name + percentage is enough. Skip unit counts.
+  GOOD: "Key Fob (ua-fob-bk) led risers at +172.7%"
+  BAD:  "Key Fob (ua-fob-bk) led risers at +172.7% vs its trailing 4-week average, with 9 units sold vs an average of 3.3"
+- Low performer bullet: just the count.
+  GOOD: "11 in-stock SKUs flagged as low performers"
+  BAD:  "3 active, in-stock SKUs recorded zero sales over the trailing 4-week window"
 
-Rules for bullets:
+**Content rules:**
 - Reference ONLY numbers from your query results
 - Do NOT make recommendations ("you should order more")
 - Do NOT reference inventory levels except for the In Stock - Low Performance section
 - Do NOT compare to industry benchmarks
+- No motivational opener. No exclamation marks. No prose paragraphs.
 
 ### HTML Email Structure
 
