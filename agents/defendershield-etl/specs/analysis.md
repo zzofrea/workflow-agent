@@ -403,6 +403,9 @@ text is black (#07043C). Only inline percentage values get green/coral color.
 - Low performer bullet: just the count.
   GOOD: "11 in-stock SKUs flagged as low performers"
   BAD:  "3 active, in-stock SKUs recorded zero sales over the trailing 4-week window"
+  BAD:  "8 in-stock SKUs qualify as low performers across No Sales (4 wk) and No Sales (This Wk) tiers."
+  Tier names like "No Sales (4 wk)" are internal labels for the table -- never
+  put them in summary bullets. Just state the count.
 
 **Content rules:**
 - Reference ONLY numbers from your query results
