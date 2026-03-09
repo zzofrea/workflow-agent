@@ -174,8 +174,17 @@ order_id) by channel for This Week vs Prior Week.
 **Threshold**: Include this section only if any channel's week-over-week
 revenue change exceeds 10% in either direction.
 
-Output: a table showing channel, this week revenue, prior week revenue,
-% change, this week orders, prior week orders.
+**Email output**: Show a table with these exact headers (no abbreviations):
+
+| Column Header | Description |
+|---------------|-------------|
+| Channel | "Website" or "Amazon" |
+| This Week Revenue | Revenue this week, formatted $X,XXX.XX |
+| Prior Week Revenue | Revenue prior week, formatted $X,XXX.XX |
+| Revenue Change | WoW percentage change |
+| This Week Orders | Order count this week |
+| Prior Week Orders | Order count prior week |
+| Orders Change | WoW percentage change in orders |
 
 ### 2. Biggest Movers
 
@@ -188,8 +197,15 @@ For each SKU, compare This Week's unit sales to the trailing 4-week average
 
 **Minimum history**: Exclude SKUs with fewer than 4 weeks of sales history.
 
-Output: top 5 risers and top 5 fallers, showing SKU, product name, this week
-units, 4-week avg units, percent change.
+**Email output**: Show top 5 risers and top 5 fallers with these exact headers:
+
+| Column Header | Description |
+|---------------|-------------|
+| SKU | Product SKU |
+| Product Name | `short_description` from product_info |
+| This Week Units | Units sold this week |
+| 4-Week Average Units | Trailing 4-week average units |
+| Percent Change | Change vs 4-week average |
 
 ### 3. Top States
 
@@ -201,8 +217,18 @@ percentage points.
 
 Only consider US states (shipping_country = 'US' or 'United States').
 
-Output: states with notable shifts, showing state, this week share %,
-4-week avg share %, change in percentage points.
+**Email output**: Show states with notable shifts using these exact headers:
+
+| Column Header | Description |
+|---------------|-------------|
+| State | US state name |
+| This Week Share | Revenue share % this week |
+| 4-Week Average Share | Revenue share % trailing 4-week average |
+| Change | Difference in percentage points (display as plain number with "pp" suffix in the cell value, NOT in the header) |
+
+**Important**: The "Change" column header must be the single word "Change" --
+do not put "(pp)" or any other annotation in the header itself. The unit
+"pp" belongs in each cell value (e.g., "+11.1 pp").
 
 ### 4. New Product Performance
 
@@ -462,6 +488,14 @@ structure but replace the body content with:
 Subject line: `DefenderShield Weekly Brief - {this_week_end}` or
 `DefenderShield Weekly Brief - Quiet Week`
 
+### Table Header Rules
+
+All table column headers MUST use full, unabbreviated words exactly as
+specified in each section's column table above. Never abbreviate headers
+(e.g., use "This Week Revenue" not "TW Rev", use "Orders Change" not
+"Ord Change", use "Percent Change" not "% Chg"). Units and annotations
+belong in cell values, not in headers.
+
 ### Table Styling
 
 Use DefenderShield brand styling for all data tables:
@@ -552,10 +586,21 @@ the email. Use this exact schema:
   "prior_week_orders": ...,
   "movers_risers_count": ...,
   "movers_fallers_count": ...,
+  "movers_detail": [
+    {"sku": "...", "this_week_units": ..., "avg_units": ..., "pct_change": ...}
+  ],
   "low_performers_count": ...,
   "fact_check_passed": null
 }
 ```
+
+The `movers_detail` array MUST contain every SKU that appears in the Biggest
+Movers section of the email (both risers and fallers). Each entry records the
+exact values used to generate the email table row:
+- `sku`: the product SKU string
+- `this_week_units`: integer units sold this week
+- `avg_units`: trailing 4-week average units (numeric, 1 decimal)
+- `pct_change`: percent change vs 4-week average (numeric, 1 decimal)
 
 All numeric values must be the exact figures from your query results -- do NOT
 round, estimate, or recalculate. The `fact_check_passed` field starts as `null`
@@ -627,13 +672,56 @@ WHERE rn = 1
 GROUP BY 1, 2 ORDER BY 1, 2;
 ```
 
+### FC-3: Biggest Movers per-SKU validation
+
+This query re-derives the movers using the same logic as the analysis phase.
+Compare each SKU in `movers_detail` against the FC-3 results.
+
+```sql
+WITH deduped AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY order_id, sku ORDER BY _modified_date DESC
+  ) AS rn
+  FROM silver.fact_sales_items
+  WHERE status IN ('Completed', 'ReadyToShip')
+),
+this_week AS (
+  SELECT sku, SUM(quantity) AS tw_units
+  FROM deduped
+  WHERE rn = 1
+    AND sale_date BETWEEN '{this_week_start}' AND '{this_week_end}'
+    AND marketplace NOT IN ('Manual', 'TransferSaleHoldsPendingQuantity')
+  GROUP BY sku
+),
+trail_avg AS (
+  SELECT sku, ROUND(SUM(quantity) / 4.0, 1) AS avg_units
+  FROM deduped
+  WHERE rn = 1
+    AND sale_date BETWEEN '{prior_week_start}'::date - 21 AND '{prior_week_end}'
+    AND marketplace NOT IN ('Manual', 'TransferSaleHoldsPendingQuantity')
+  GROUP BY sku
+  HAVING COUNT(DISTINCT date_trunc('week', sale_date)) >= 4
+)
+SELECT
+  COALESCE(t.sku, tr.sku) AS sku,
+  COALESCE(t.tw_units, 0) AS this_week_units,
+  tr.avg_units,
+  ROUND(((COALESCE(t.tw_units, 0) - tr.avg_units) / tr.avg_units * 100)::numeric, 1) AS pct_change
+FROM trail_avg tr
+LEFT JOIN this_week t ON t.sku = tr.sku
+WHERE tr.avg_units > 0
+  AND ABS(COALESCE(t.tw_units, 0) - tr.avg_units) >= 5
+  AND ABS((COALESCE(t.tw_units, 0) - tr.avg_units) / tr.avg_units * 100) > 50
+ORDER BY pct_change DESC;
+```
+
 ### Comparison Rules
 
 For each metric, compute: `abs(metrics_value - fc_value) / fc_value`
 
 If this ratio exceeds 0.005 (0.5%) for ANY metric, the fact-check FAILS.
 
-Metrics to validate (all 8 must pass):
+Metrics to validate (all checks must pass):
 
 | FC Query | FC Row | Metric in metrics.json |
 |----------|--------|----------------------|
@@ -645,6 +733,21 @@ Metrics to validate (all 8 must pass):
 | FC-2 | this_week / Amazon | `channel_breakdown.Amazon.this_week` |
 | FC-2 | prior_week / Website | `channel_breakdown.Website.prior_week` |
 | FC-2 | prior_week / Amazon | `channel_breakdown.Amazon.prior_week` |
+| FC-3 | per-SKU | `movers_detail` (see below) |
+
+**FC-3 per-SKU validation**:
+
+For each entry in `movers_detail`, find the matching SKU row in the FC-3
+query results. The check FAILS if:
+- A SKU in `movers_detail` does not appear in the FC-3 results (phantom SKU)
+- A SKU in `movers_detail` has a `pct_change` that differs from the FC-3
+  `pct_change` by more than 1.0 percentage point absolute
+  (e.g., metrics says +176.9%, FC-3 says +176.0% -> pass;
+   metrics says -100.0%, FC-3 says -58.8% -> fail)
+- A SKU in `movers_detail` has `this_week_units` that differs from FC-3
+
+When reporting FC-3 discrepancies, list each failing SKU separately with
+the metric name format `movers_detail.<sku>.pct_change`.
 
 After comparison, update metrics.json:
 - If ALL checks pass: set `fact_check_passed` to `true`
