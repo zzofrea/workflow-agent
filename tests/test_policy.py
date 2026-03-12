@@ -9,6 +9,7 @@ import pytest
 
 from workflow_agent.policy import (
     DatabaseConfig,
+    Policy,
     load_policy,
     resolve_env_var,
     resolve_policy_for_service,
@@ -100,6 +101,23 @@ class TestDatabaseConfig:
         assert db.type == "postgres"
         assert db.port == 5432
         assert db.env_prefix == "PG"
+        assert db.docker is True
+
+    def test_docker_false_accepted(self) -> None:
+        db = DatabaseConfig(
+            name="external",
+            type="mssql",
+            hostname="db.example.com",
+            port=1433,
+            database="mydb",
+            user="reader",
+            password="${DB_PASS}",
+            env_prefix="MSSQL_",
+            docker=False,
+        )
+        assert db.docker is False
+        assert db.type == "mssql"
+        assert db.port == 1433
 
 
 class TestLoadPolicy:
@@ -205,8 +223,6 @@ class TestPolicyEnvironment:
     """Tests for Policy.environment field."""
 
     def test_empty_environment_default(self) -> None:
-        from workflow_agent.policy import Policy
-
         policy = Policy(name="test")
         assert policy.environment == {}
 
@@ -237,6 +253,38 @@ class TestPolicyEnvironment:
 
         with pytest.raises(ValueError, match="Sensitive key"):
             load_policy(policy_file)
+
+
+class TestExtraHosts:
+    """Tests for Policy.extra_hosts field."""
+
+    def test_default_empty(self) -> None:
+        policy = Policy(name="test")
+        assert policy.extra_hosts == []
+
+    def test_extra_hosts_parsed(self) -> None:
+        policy = Policy(
+            name="test",
+            extra_hosts=["foo:host-gateway", "db.example.com:host-gateway"],
+        )
+        assert len(policy.extra_hosts) == 2
+        assert "foo:host-gateway" in policy.extra_hosts
+
+    def test_extra_hosts_from_yaml(self, tmp_path: Path) -> None:
+        yaml_content = textwrap.dedent("""\
+            name: ext-test
+            extra_hosts:
+              - "db.example.com:host-gateway"
+              - "host.docker.internal:host-gateway"
+            tools:
+              - "Read"
+        """)
+        policy_file = tmp_path / "ext.yaml"
+        policy_file.write_text(yaml_content)
+
+        policy = load_policy(policy_file)
+        assert len(policy.extra_hosts) == 2
+        assert policy.extra_hosts[0] == "db.example.com:host-gateway"
 
 
 class TestResolvePolicyForService:

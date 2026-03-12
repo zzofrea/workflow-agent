@@ -210,6 +210,10 @@ def build_docker_cmd(
         f"{output_dir}:/agent/output:rw",
     ]
 
+    # Add extra_hosts (--add-host) for external database access
+    for host_entry in policy.extra_hosts:
+        cmd.extend(["--add-host", host_entry])
+
     # Add env vars from policy
     env_pairs = build_env_vars(policy, role_name, service)
     for key, value in env_pairs:
@@ -254,15 +258,16 @@ def run_agent(
         if not pull_image(image):
             return _error_report(service, role_name, f"Could not pull image: {image}")
 
-    # Collect all hostnames and resolve to container names
-    hostnames = {db.hostname for db in policy.databases}
-    if not hostnames:
+    # Collect hostnames for Docker-managed databases only
+    docker_dbs = [db for db in policy.databases if db.docker]
+    hostnames = {db.hostname for db in docker_dbs}
+    if not policy.databases:
         log.warning("runner.no_databases", service=service, role=role_name)
 
     host_to_container = resolve_container_names(hostnames) if hostnames else {}
 
-    # Check all DB containers are running
-    for db in policy.databases:
+    # Check Docker-managed DB containers are running (skip external DBs)
+    for db in docker_dbs:
         ctr_key = db.hostname
         container_name = host_to_container.get(ctr_key) or ctr_key
         if not check_container_running(container_name):
@@ -287,8 +292,8 @@ def run_agent(
         )
         log.info("runner.network_created", network=net_name)
 
-        # Connect each DB container to temp network with hostname alias
-        for db in policy.databases:
+        # Connect each Docker-managed DB container to temp network
+        for db in docker_dbs:
             ctr_key = db.hostname
             container_name = host_to_container.get(ctr_key) or ctr_key
             subprocess.run(
@@ -384,22 +389,43 @@ def run_agent(
         return _error_report(service, role_name, f"Network setup failed: {exc}")
 
     finally:
+        # Ensure agent container is gone before disconnecting networks
+        subprocess.run(
+            ["docker", "rm", "-f", agent_container],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         # Disconnect all DB containers from temp network
         for ctr in connected_containers:
-            subprocess.run(
-                ["docker", "network", "disconnect", net_name, ctr],
+            disc = subprocess.run(
+                ["docker", "network", "disconnect", "-f", net_name, ctr],
                 capture_output=True,
                 text=True,
                 timeout=30,
             )
+            if disc.returncode != 0:
+                log.warning(
+                    "runner.network_disconnect_failed",
+                    network=net_name,
+                    container=ctr,
+                    stderr=disc.stderr.strip(),
+                )
         # Remove temp network
-        subprocess.run(
+        rm_result = subprocess.run(
             ["docker", "network", "rm", net_name],
             capture_output=True,
             text=True,
             timeout=30,
         )
-        log.info("runner.network_cleaned", network=net_name)
+        if rm_result.returncode != 0:
+            log.warning(
+                "runner.network_rm_failed",
+                network=net_name,
+                stderr=rm_result.stderr.strip(),
+            )
+        else:
+            log.info("runner.network_cleaned", network=net_name)
 
 
 def _prepare_input(input_dir: str, role_config: dict[str, Any], spec_content: str) -> None:

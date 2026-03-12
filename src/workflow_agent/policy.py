@@ -86,6 +86,7 @@ class DatabaseConfig(BaseModel):
     user: str
     password: str
     env_prefix: str = "PG"
+    docker: bool = True
 
     @field_validator("password", mode="before")
     @classmethod
@@ -108,6 +109,7 @@ class Policy(BaseModel):
     databases: list[DatabaseConfig] = []
     tools: list[str] = []
     environment: dict[str, str] = {}
+    extra_hosts: list[str] = []
 
     @field_validator("environment", mode="before")
     @classmethod

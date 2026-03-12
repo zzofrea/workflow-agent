@@ -170,11 +170,17 @@ def cmd_validate(args: argparse.Namespace) -> None:
         else:
             errors.append(f"Spec file not found: {spec_path}")
 
-    # Check database containers
-    hostnames = {db.hostname for db in policy.databases}
+    # Check database containers (Docker-managed only)
+    docker_dbs = [db for db in policy.databases if db.docker]
+    external_dbs = [db for db in policy.databases if not db.docker]
+
+    for db in external_dbs:
+        print(f"Database [{db.name}]: {db.hostname}:{db.port} -- external (skip container check)")
+
+    hostnames = {db.hostname for db in docker_dbs}
     if hostnames:
         host_to_container = resolve_container_names(hostnames)
-        for db in policy.databases:
+        for db in docker_dbs:
             ctr_key = db.hostname
             container_name = host_to_container.get(ctr_key) or ctr_key
             if check_container_running(container_name):
