@@ -80,6 +80,16 @@ def build_prompt(spec: str) -> str:
     return "\n".join(parts)
 
 
+def _is_suspiciously_fast(elapsed: float, result: subprocess.CompletedProcess[str]) -> bool:
+    """Detect responses that completed too quickly to be real agent work.
+
+    A genuine audit takes 30-120s. If the CLI exits in under 10s with a
+    non-zero exit code, the stdout is likely an error message (API error,
+    auth failure, rate limit) rather than real agent output.
+    """
+    return elapsed < 10.0 and result.returncode != 0
+
+
 def run_claude_cli(
     prompt: str,
     system_prompt: str,
@@ -88,11 +98,14 @@ def run_claude_cli(
     max_turns: int = 50,
     retries: int = 2,
     retry_delay: float = 10.0,
-) -> tuple[str, float]:
-    """Invoke Claude CLI and return (output_text, duration_seconds).
+) -> tuple[str, float, str]:
+    """Invoke Claude CLI and return (output_text, duration_seconds, stderr_text).
 
-    Retries on transient failures (non-zero exit with empty stdout) up to
-    ``retries`` times, waiting ``retry_delay`` seconds between attempts.
+    Retries on transient failures up to ``retries`` times, waiting
+    ``retry_delay`` seconds between attempts.  A transient failure is either:
+      - non-zero exit with empty stdout, OR
+      - non-zero exit with stdout that arrived suspiciously fast (< 10 s),
+        indicating an error message rather than real agent output.
     """
     cmd = [
         "claude",
@@ -113,6 +126,7 @@ def run_claude_cli(
         cmd.extend(["--max-turns", str(max_turns)])
 
     total_duration = 0.0
+    all_stderr: list[str] = []
     result: subprocess.CompletedProcess[str] | None = None
     for attempt in range(1 + max(retries, 0)):
         start = time.monotonic()
@@ -126,16 +140,30 @@ def run_claude_cli(
         elapsed = time.monotonic() - start
         total_duration += elapsed
 
-        # Success or non-empty output -- return immediately
-        if result.returncode == 0 or result.stdout.strip():
-            if result.returncode != 0:
-                print(f"Claude CLI stderr: {result.stderr}", file=sys.stderr)
-            return result.stdout, total_duration
+        if result.stderr:
+            tag = f"[attempt {attempt + 1}, {elapsed:.1f}s, exit {result.returncode}]"
+            all_stderr.append(f"{tag} {result.stderr}")
 
-        # Transient failure: non-zero exit with empty stdout
+        # Clean success -- return immediately
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout, total_duration, "\n".join(all_stderr)
+
+        # Non-zero exit but with real output (took a reasonable amount of time)
+        if result.stdout.strip() and not _is_suspiciously_fast(elapsed, result):
+            print(f"Claude CLI stderr: {result.stderr}", file=sys.stderr)
+            return result.stdout, total_duration, "\n".join(all_stderr)
+
+        # Transient failure: empty output OR suspiciously fast non-zero exit
+        is_fast = _is_suspiciously_fast(elapsed, result)
         if attempt < retries:
+            reason = (
+                f"suspiciously fast ({elapsed:.1f}s) with exit {result.returncode}"
+                if is_fast
+                else f"empty output with exit {result.returncode}"
+            )
             print(
-                f"Claude CLI returned empty output (exit {result.returncode}), "
+                f"Claude CLI transient failure: {reason}; "
+                f"stdout={result.stdout[:200]!r}; stderr={result.stderr[:200]!r}; "
                 f"retrying in {retry_delay}s (attempt {attempt + 1}/{retries})...",
                 file=sys.stderr,
             )
@@ -143,13 +171,14 @@ def run_claude_cli(
         else:
             print(
                 f"Claude CLI failed after {1 + retries} attempts "
-                f"(exit {result.returncode}): {result.stderr}",
+                f"(exit {result.returncode}, {elapsed:.1f}s): "
+                f"stdout={result.stdout[:500]!r}; stderr={result.stderr[:500]!r}",
                 file=sys.stderr,
             )
-            return result.stdout, total_duration
+            return result.stdout, total_duration, "\n".join(all_stderr)
 
     # Unreachable: loop always executes at least once and returns above
-    return "", total_duration
+    return "", total_duration, "\n".join(all_stderr)
 
 
 def parse_json_output(raw_output: str) -> dict | None:
@@ -381,6 +410,13 @@ def build_markdown_report(report: dict) -> str:
         lines.append(report["raw_output"])
         lines.append("```")
 
+    if report.get("cli_stderr"):
+        lines.append("")
+        lines.append("## Claude CLI Stderr")
+        lines.append("```")
+        lines.append(report["cli_stderr"])
+        lines.append("```")
+
     return "\n".join(lines)
 
 
@@ -405,7 +441,9 @@ def _run_claude_cli_runtime(config: dict, spec: str) -> None:
     role_name = os.environ.get("AGENT_ROLE") or "unknown"
 
     prompt = build_prompt(spec)
-    raw_output, duration = run_claude_cli(prompt, system_prompt, tools, model, max_turns)
+    raw_output, duration, cli_stderr = run_claude_cli(
+        prompt, system_prompt, tools, model, max_turns
+    )
     print(f"Agent completed in {duration:.1f}s")
 
     parsed = parse_json_output(raw_output) if output_format == "json" else None
@@ -419,6 +457,9 @@ def _run_claude_cli_runtime(config: dict, spec: str) -> None:
         model=model,
         duration=duration,
     )
+
+    if cli_stderr:
+        report["cli_stderr"] = cli_stderr[:5000]
 
     md_report = build_markdown_report(report)
 

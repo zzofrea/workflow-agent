@@ -217,7 +217,7 @@ class TestRunClaudeCliRetry:
         mock_run.return_value = _sp.CompletedProcess(  # type: ignore[attr-defined]
             args=[], returncode=0, stdout='{"scenarios":[]}', stderr=""
         )
-        output, _ = run_claude_cli("p", "s", "Read", retries=2)
+        output, _, _ = run_claude_cli("p", "s", "Read", retries=2)
         assert output == '{"scenarios":[]}'
         assert mock_run.call_count == 1  # type: ignore[attr-defined]
 
@@ -229,7 +229,7 @@ class TestRunClaudeCliRetry:
         fail = _sp.CompletedProcess(args=[], returncode=1, stdout="", stderr="")
         success = _sp.CompletedProcess(args=[], returncode=0, stdout='{"scenarios":[]}', stderr="")
         mock_run.side_effect = [fail, success]  # type: ignore[attr-defined]
-        output, _ = run_claude_cli("p", "s", "Read", retries=2, retry_delay=0.0)
+        output, _, _ = run_claude_cli("p", "s", "Read", retries=2, retry_delay=0.0)
         assert output == '{"scenarios":[]}'
         assert mock_run.call_count == 2  # type: ignore[attr-defined]
         mock_sleep.assert_called_once_with(0.0)  # type: ignore[attr-defined]
@@ -241,20 +241,55 @@ class TestRunClaudeCliRetry:
 
         fail = _sp.CompletedProcess(args=[], returncode=1, stdout="", stderr="api error")
         mock_run.return_value = fail  # type: ignore[attr-defined]
-        output, _ = run_claude_cli("p", "s", "Read", retries=1, retry_delay=0.0)
+        output, _, _ = run_claude_cli("p", "s", "Read", retries=1, retry_delay=0.0)
         assert output == ""
         assert mock_run.call_count == 2  # type: ignore[attr-defined]
 
+    @patch("entrypoint.time.sleep")
     @patch("entrypoint.subprocess.run")
-    def test_nonzero_exit_with_output_returns_immediately(self, mock_run: object) -> None:
+    def test_stderr_collected_across_retries(self, mock_run: object, mock_sleep: object) -> None:
         import subprocess as _sp
 
+        fail = _sp.CompletedProcess(args=[], returncode=1, stdout="", stderr="auth failed")
+        mock_run.return_value = fail  # type: ignore[attr-defined]
+        _, _, stderr = run_claude_cli("p", "s", "Read", retries=1, retry_delay=0.0)
+        assert "auth failed" in stderr
+        assert stderr.count("auth failed") == 2  # Once per attempt
+
+    @patch("entrypoint.time.monotonic")
+    @patch("entrypoint.subprocess.run")
+    def test_nonzero_exit_with_output_returns_immediately_if_slow(
+        self, mock_run: object, mock_mono: object
+    ) -> None:
+        """Non-zero exit with output returns immediately if runtime >= 10s."""
+        import subprocess as _sp
+
+        # Simulate 15s elapsed (start=0, end=15)
+        mock_mono.side_effect = [0.0, 15.0]  # type: ignore[attr-defined]
         mock_run.return_value = _sp.CompletedProcess(  # type: ignore[attr-defined]
             args=[], returncode=1, stdout="partial output", stderr="warn"
         )
-        output, _ = run_claude_cli("p", "s", "Read", retries=2)
+        output, _, _ = run_claude_cli("p", "s", "Read", retries=2)
         assert output == "partial output"
         assert mock_run.call_count == 1  # type: ignore[attr-defined]
+
+    @patch("entrypoint.time.sleep")
+    @patch("entrypoint.time.monotonic")
+    @patch("entrypoint.subprocess.run")
+    def test_suspiciously_fast_nonzero_exit_retries(
+        self, mock_run: object, mock_mono: object, mock_sleep: object
+    ) -> None:
+        """Non-zero exit with output retries if runtime < 10s (suspiciously fast)."""
+        import subprocess as _sp
+
+        # Simulate 1s elapsed for each attempt (3 total)
+        mock_mono.side_effect = [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]  # type: ignore[attr-defined]
+        mock_run.return_value = _sp.CompletedProcess(  # type: ignore[attr-defined]
+            args=[], returncode=1, stdout="partial output", stderr="warn"
+        )
+        output, _, _ = run_claude_cli("p", "s", "Read", retries=2, retry_delay=0.0)
+        assert output == "partial output"
+        assert mock_run.call_count == 3  # type: ignore[attr-defined]
 
 
 class TestDispatchRuntime:
