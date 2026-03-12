@@ -147,7 +147,11 @@ SELECT
   (date_trunc('month', current_date) - interval '1 month') - interval '1 year' AS yoy_month_start,
   (date_trunc('month', current_date) - interval '1 month') - interval '1 year' + interval '1 month' - interval '1 day' AS yoy_month_end,
   (date_trunc('month', current_date) - interval '1 month') - interval '3 months' AS trailing_3mo_start,
-  date_trunc('month', current_date) - interval '1 month' - interval '1 day' AS trailing_3mo_end;
+  date_trunc('month', current_date) - interval '1 month' - interval '1 day' AS trailing_3mo_end,
+  date_trunc('year', date_trunc('month', current_date) - interval '1 month') AS ytd_start,
+  date_trunc('month', current_date) - interval '1 day' AS ytd_end,
+  date_trunc('year', date_trunc('month', current_date) - interval '1 month') - interval '1 year' AS prev_ytd_start,
+  (date_trunc('month', current_date) - interval '1 month') - interval '1 year' + interval '1 month' - interval '1 day' AS prev_ytd_end;
 ```
 
 Verify the output:
@@ -159,6 +163,13 @@ Verify the output:
   the report month (e.g., for Feb report: Nov 1)
 - `trailing_3mo_end` MUST be the last day of the month before the report month
   (same as report_month_end - this is the full trailing window)
+- `ytd_start` MUST be January 1 of the report year
+- `ytd_end` MUST equal `report_month_end`
+- `prev_ytd_start` MUST be January 1 of the year before the report year
+- `prev_ytd_end` MUST equal `yoy_month_end`
+
+Note: For January reports, YTD equals the monthly figures (single-month window).
+This is correct behavior.
 
 If any of these are wrong, STOP and report the error.
 
@@ -184,11 +195,18 @@ order_id) by channel for This Month vs Same Month Last Year (YoY).
 |---------------|-------------|
 | Channel | "Website" or "Amazon" |
 | This Month Revenue | Revenue this month, formatted $X,XXX.XX |
-| Last Year Revenue | Revenue same month last year, formatted $X,XXX.XX |
+| Same Month Last Year | Revenue same month last year, formatted $X,XXX.XX |
 | Revenue Change | YoY percentage change |
 | This Month Orders | Order count this month |
 | Last Year Orders | Order count same month last year |
 | Orders Change | YoY percentage change in orders |
+| Year-to-Date Sales | Revenue from ytd_start through ytd_end per channel, formatted $X,XXX.XX |
+| Previous Year Year-to-Date Sales | Revenue from prev_ytd_start through prev_ytd_end per channel, formatted $X,XXX.XX |
+
+**YTD query guidance**: Compute per-channel YTD by running a separate query (or
+extending Q1) with `sale_date BETWEEN '{ytd_start}' AND '{ytd_end}'` for current
+YTD and `sale_date BETWEEN '{prev_ytd_start}' AND '{prev_ytd_end}'` for previous
+year YTD, grouped by channel using the same marketplace normalization.
 
 ### 2. Biggest Movers
 
@@ -212,8 +230,10 @@ SKUs with $0 revenue in either period are excluded entirely -- they are not
 | SKU | Product SKU |
 | Product Name | `short_description` from product_info |
 | This Month Revenue | Revenue this month, formatted $X,XXX.XX |
-| Last Year Revenue | Revenue same month last year, formatted $X,XXX.XX |
+| Same Month Last Year | Revenue same month last year, formatted $X,XXX.XX |
 | Percent Change | Change vs same month last year |
+| Year-to-Date Sales | Revenue from ytd_start through ytd_end per SKU, formatted $X,XXX.XX |
+| Previous Year Year-to-Date Sales | Revenue from prev_ytd_start through prev_ytd_end per SKU, formatted $X,XXX.XX |
 
 **Fallers table** headers (adds Inventory Value column):
 
@@ -222,13 +242,22 @@ SKUs with $0 revenue in either period are excluded entirely -- they are not
 | SKU | Product SKU |
 | Product Name | `short_description` from product_info |
 | This Month Revenue | Revenue this month, formatted $X,XXX.XX |
-| Last Year Revenue | Revenue same month last year, formatted $X,XXX.XX |
+| Same Month Last Year | Revenue same month last year, formatted $X,XXX.XX |
 | Percent Change | Change vs same month last year |
+| Year-to-Date Sales | Revenue from ytd_start through ytd_end per SKU, formatted $X,XXX.XX |
+| Previous Year Year-to-Date Sales | Revenue from prev_ytd_start through prev_ytd_end per SKU, formatted $X,XXX.XX |
 | In Stock | `quantity_available` from bronze.product_info (integer count) |
 
 **In Stock rules**:
 - If `quantity_available` is 0 (out of stock), color the value coral (#FF7043) bold
 - Query: JOIN fallers to `bronze.product_info` on SKU for `quantity_available`
+
+**Biggest Movers YTD query guidance**: For each mover SKU, compute YTD revenue
+using a LEFT JOIN from the movers result to a YTD subquery grouped by SKU. Use
+`COALESCE(..., 0)` to handle SKUs with no sales in a YTD period. Query pattern:
+`LEFT JOIN (SELECT sku, SUM(line_price) AS ytd_rev FROM deduped WHERE rn = 1
+AND sale_date BETWEEN '{ytd_start}' AND '{ytd_end}' ... GROUP BY sku) ytd
+ON movers.sku = ytd.sku`. Repeat for `prev_ytd_start`/`prev_ytd_end`.
 
 ### 3. Top States
 
@@ -609,16 +638,18 @@ the email. Use this exact schema:
   "this_month_revenue": ...,
   "yoy_month_revenue": ...,
   "yoy_change_pct": ...,
+  "ytd_revenue": ...,
+  "prev_ytd_revenue": ...,
   "channel_breakdown": {
-    "Website": {"this_month": ..., "last_year": ...},
-    "Amazon": {"this_month": ..., "last_year": ...}
+    "Website": {"this_month": ..., "last_year": ..., "ytd": ..., "prev_ytd": ...},
+    "Amazon": {"this_month": ..., "last_year": ..., "ytd": ..., "prev_ytd": ...}
   },
   "this_month_orders": ...,
   "yoy_month_orders": ...,
   "movers_risers_count": ...,
   "movers_fallers_count": ...,
   "movers_detail": [
-    {"sku": "...", "this_month_revenue": ..., "last_year_revenue": ..., "pct_change": ..., "in_stock": ...}
+    {"sku": "...", "this_month_revenue": ..., "last_year_revenue": ..., "pct_change": ..., "ytd_revenue": ..., "prev_ytd_revenue": ..., "in_stock": ...}
   ],
   "low_performers_count": ...,
   "fact_check_passed": null
@@ -747,6 +778,29 @@ WHERE t.tm_revenue > 0
 ORDER BY pct_change DESC;
 ```
 
+### FC-4: YTD revenue validation
+
+```sql
+WITH deduped AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY order_id, sku ORDER BY _modified_date DESC
+  ) AS rn
+  FROM silver.fact_sales_items
+  WHERE status IN ('Completed', 'ReadyToShip')
+)
+SELECT
+  CASE
+    WHEN sale_date BETWEEN '{ytd_start}' AND '{ytd_end}' THEN 'ytd'
+    WHEN sale_date BETWEEN '{prev_ytd_start}' AND '{prev_ytd_end}' THEN 'prev_ytd'
+  END AS period,
+  ROUND(SUM(line_price)::numeric, 2) AS total_revenue
+FROM deduped
+WHERE rn = 1
+  AND sale_date BETWEEN '{prev_ytd_start}' AND '{ytd_end}'
+  AND marketplace NOT IN ('Manual', 'TransferSaleHoldsPendingQuantity')
+GROUP BY 1 ORDER BY 1;
+```
+
 ### Comparison Rules
 
 For each metric, compute: `abs(metrics_value - fc_value) / fc_value`
@@ -766,6 +820,8 @@ Metrics to validate (all checks must pass):
 | FC-2 | yoy_month / Website | `channel_breakdown.Website.last_year` |
 | FC-2 | yoy_month / Amazon | `channel_breakdown.Amazon.last_year` |
 | FC-3 | per-SKU | `movers_detail` (see below) |
+| FC-4 | ytd / total_revenue | `ytd_revenue` |
+| FC-4 | prev_ytd / total_revenue | `prev_ytd_revenue` |
 
 **FC-3 per-SKU validation**:
 
@@ -843,3 +899,6 @@ Before sending, verify:
 - [ ] HTML renders correctly (close all tags)
 - [ ] Recipients come from AGENT_RECIPIENT_LIST env var
 - [ ] Biggest Movers excludes SKUs with $0 revenue in either period
+- [ ] YTD date ranges span Jan 1 through correct end dates
+- [ ] All 3 tables (Sales Snapshot, Risers, Fallers) include YTD columns
+- [ ] FC-4 YTD validation passed

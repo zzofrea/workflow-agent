@@ -36,7 +36,11 @@ system_prompt: |
     (date_trunc('month', current_date) - interval '1 month') - interval '1 year' AS yoy_month_start,
     (date_trunc('month', current_date) - interval '1 month') - interval '1 year' + interval '1 month' - interval '1 day' AS yoy_month_end,
     (date_trunc('month', current_date) - interval '1 month') - interval '3 months' AS trailing_3mo_start,
-    date_trunc('month', current_date) - interval '1 month' - interval '1 day' AS trailing_3mo_end;
+    date_trunc('month', current_date) - interval '1 month' - interval '1 day' AS trailing_3mo_end,
+    date_trunc('year', date_trunc('month', current_date) - interval '1 month') AS ytd_start,
+    date_trunc('month', current_date) - interval '1 day' AS ytd_end,
+    date_trunc('year', date_trunc('month', current_date) - interval '1 month') - interval '1 year' AS prev_ytd_start,
+    (date_trunc('month', current_date) - interval '1 month') - interval '1 year' + interval '1 month' - interval '1 day' AS prev_ytd_end;
 
   VERIFY the output:
   - report_month_start MUST be the 1st of the prior month
@@ -56,7 +60,7 @@ system_prompt: |
   - Filter to status IN ('Completed', 'ReadyToShip')
   - Apply marketplace normalization (WooCommerce/Shopify -> Website, Amazon* -> Amazon, exclude Manual/transfers)
 
-  Queries: Q1 Sales Snapshot (this month vs same month last year),
+  Queries: Q1 Sales Snapshot (this month vs same month last year + YTD),
   Q2 SKU Revenue YoY (this month vs same month last year per SKU),
   Q3 Geographic (this month vs same month last year state shares),
   Q4 New Product Data (new SKUs + their sales since launch),
@@ -64,9 +68,9 @@ system_prompt: |
 
   ### Phase 3: Analysis
 
-  1. **Sales Snapshot**: Always include. Compare This Month vs Same Month Last Year (YoY) by channel.
+  1. **Sales Snapshot**: Always include. Compare This Month vs Same Month Last Year (YoY) by channel. Include Year-to-Date Sales and Previous Year Year-to-Date Sales columns.
   2. **Biggest Movers**: Compare this month's revenue per SKU to same month last year.
-     Top 5 risers + top 5 fallers. Fallers include In Stock column.
+     Top 5 risers + top 5 fallers. Fallers include In Stock column. Both tables include YTD columns.
      - EXCLUDE SKUs with zero revenue in either period. Both this month AND
        same month last year must have >$0 revenue to qualify as a mover.
      - If quantity_available is 0 on a faller, color coral bold.
