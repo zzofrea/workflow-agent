@@ -32,7 +32,9 @@ system_prompt: |
     current_date - (extract(isodow from current_date))::int AS this_week_end,
     current_date - (extract(isodow from current_date))::int - 6 AS this_week_start,
     current_date - (extract(isodow from current_date))::int - 7 AS prior_week_end,
-    current_date - (extract(isodow from current_date))::int - 13 AS prior_week_start;
+    current_date - (extract(isodow from current_date))::int - 13 AS prior_week_start,
+    current_date - (extract(isodow from current_date))::int - 364 AS yoy_week_end,
+    current_date - (extract(isodow from current_date))::int - 370 AS yoy_week_start;
 
   VERIFY the output: this_week_end MUST be a Sunday, this_week_start MUST be
   a Monday, and the range must be exactly 7 days. If wrong, STOP.
@@ -53,8 +55,8 @@ system_prompt: |
 
   ### Phase 3: Analysis
 
-  1. **Sales Snapshot**: Include if any channel's week-over-week revenue change > 10%.
-  2. **Biggest Movers**: deviation > 50% AND abs change >= 5 units. Top 5 risers + fallers.
+  1. **Sales Snapshot**: Always include the Sales Snapshot section comparing This Week vs Same Week Last Year (YoY).
+  2. **Biggest Movers**: revenue deviation > 50% AND abs revenue change >= $150. Top 5 risers + fallers. Fallers include In Stock column (`quantity_available` from product_info). If quantity_available is 0, color coral bold.
   3. **Top States**: states where revenue share shifted > 5 percentage points vs trailing 4-week avg.
   4. **New Product Performance**: Products with created_date_utc within 90 days
      AND quantity_available > 0 (must be in stock).

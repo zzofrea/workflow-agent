@@ -4,7 +4,7 @@
 
 Query the DefenderShield ETL database, analyze the prior week's sales data,
 and send an HTML email report. The report period is the most recent complete
-Monday-through-Sunday week, compared week-over-week to the week before that.
+Monday-through-Sunday week, compared year-over-year to the same week last year.
 
 You MUST complete these phases in order:
 
@@ -155,12 +155,18 @@ SELECT
   current_date - (extract(isodow from current_date))::int AS this_week_end,
   current_date - (extract(isodow from current_date))::int - 6 AS this_week_start,
   current_date - (extract(isodow from current_date))::int - 7 AS prior_week_end,
-  current_date - (extract(isodow from current_date))::int - 13 AS prior_week_start;
+  current_date - (extract(isodow from current_date))::int - 13 AS prior_week_start,
+  current_date - (extract(isodow from current_date))::int - 364 AS yoy_week_end,
+  current_date - (extract(isodow from current_date))::int - 370 AS yoy_week_start;
 ```
 
 Verify the output: this_week_end MUST be a Sunday, this_week_start MUST be a
-Monday, and the date range must be exactly 7 days. If any of these are wrong,
-STOP and report the error.
+Monday, and the date range must be exactly 7 days. yoy_week_start MUST be a
+Monday and yoy_week_end MUST be a Sunday (52 weeks before the reporting week).
+If any of these are wrong, STOP and report the error.
+
+Verify that the YoY period returns data -- if the Sales Snapshot query returns
+zero rows for the YoY period, STOP and report an error. Do not send the email.
 
 ---
 
@@ -169,10 +175,9 @@ STOP and report the error.
 ### 1. Sales Snapshot
 
 Compare total revenue (SUM of line_price) and order count (COUNT DISTINCT
-order_id) by channel for This Week vs Prior Week.
+order_id) by channel for This Week vs Same Week Last Year (YoY).
 
-**Threshold**: Include this section only if any channel's week-over-week
-revenue change exceeds 10% in either direction.
+**Always include this section** -- no threshold gate.
 
 **Email output**: Show a table with these exact headers (no abbreviations):
 
@@ -180,32 +185,49 @@ revenue change exceeds 10% in either direction.
 |---------------|-------------|
 | Channel | "Website" or "Amazon" |
 | This Week Revenue | Revenue this week, formatted $X,XXX.XX |
-| Prior Week Revenue | Revenue prior week, formatted $X,XXX.XX |
-| Revenue Change | WoW percentage change |
+| Last Year Revenue | Revenue same week last year, formatted $X,XXX.XX |
+| Revenue Change | YoY percentage change |
 | This Week Orders | Order count this week |
-| Prior Week Orders | Order count prior week |
-| Orders Change | WoW percentage change in orders |
+| Last Year Orders | Order count same week last year |
+| Orders Change | YoY percentage change in orders |
 
 ### 2. Biggest Movers
 
-For each SKU, compare This Week's unit sales to the trailing 4-week average
+For each SKU, compare This Week's revenue to the trailing 4-week average revenue
 (the 4 complete weeks ending with Prior Week).
 
 **Thresholds**: Include a SKU only if:
-- Unit sales changed more than 50% from the 4-week average, AND
-- The absolute change is at least 5 units
+- Revenue changed more than 50% from the 4-week average, AND
+- The absolute revenue change is at least $150
 
 **Minimum history**: Exclude SKUs with fewer than 4 weeks of sales history.
 
-**Email output**: Show top 5 risers and top 5 fallers with these exact headers:
+**Email output**: Show top 5 risers and top 5 fallers as separate sub-tables.
+
+**Risers table** headers:
 
 | Column Header | Description |
 |---------------|-------------|
 | SKU | Product SKU |
 | Product Name | `short_description` from product_info |
-| This Week Units | Units sold this week |
-| 4-Week Average Units | Trailing 4-week average units |
+| This Week Revenue | Revenue this week, formatted $X,XXX.XX |
+| 4-Week Average Revenue | Trailing 4-week average revenue, formatted $X,XXX.XX |
 | Percent Change | Change vs 4-week average |
+
+**Fallers table** headers (adds Inventory Value column):
+
+| Column Header | Description |
+|---------------|-------------|
+| SKU | Product SKU |
+| Product Name | `short_description` from product_info |
+| This Week Revenue | Revenue this week, formatted $X,XXX.XX |
+| 4-Week Average Revenue | Trailing 4-week average revenue, formatted $X,XXX.XX |
+| Percent Change | Change vs 4-week average |
+| In Stock | `quantity_available` from bronze.product_info (integer count) |
+
+**In Stock rules**:
+- If `quantity_available` is 0 (out of stock), color the value coral (#FF7043) bold
+- Query: JOIN fallers to `bronze.product_info` on SKU for `quantity_available`
 
 ### 3. Top States
 
@@ -390,11 +412,11 @@ text is black (#07043C). Only inline percentage values get green/coral color.
 
 **Style rules -- keep bullets tight:**
 - Lead with the current number and direction, not the comparison.
-  GOOD: "Total revenue $56,769.43 across 575 orders, down -5.9% WoW"
-  BAD:  "Total revenue was $56,769.43 this week (-5.9%), on 575 orders, down from $60,341.14 and 590 orders the prior week."
-- Do NOT restate prior-week figures -- the tables already show both weeks.
-  GOOD: "Website revenue dropped -17.3% to $25,975.08"
-  BAD:  "Website revenue declined -17.3% week-over-week, from $31,407.55 to $25,975.08"
+  GOOD: "Total revenue $56,769.43 across 575 orders, down -5.9% YoY"
+  BAD:  "Total revenue was $56,769.43 this week (-5.9%), on 575 orders, down from $60,341.14 and 590 orders last year."
+- Do NOT restate last year's figures -- the tables already show both periods.
+  GOOD: "Website revenue dropped -17.3% YoY to $25,975.08"
+  BAD:  "Website revenue declined -17.3% year-over-year, from $31,407.55 to $25,975.08"
 - One number per bullet. If a bullet has more than two dollar amounts or
   two unit counts, it's too verbose -- split or trim.
 - Mover bullets: name + percentage is enough. Skip unit counts.
@@ -498,7 +520,7 @@ structure but replace the body content with:
 ```html
 <p style="color:#07043C;">
   Total revenue: ${total_revenue}. Orders: {order_count}.
-  No noteworthy changes from the prior week.
+  No noteworthy year-over-year changes.
 </p>
 ```
 
@@ -593,18 +615,18 @@ the email. Use this exact schema:
 ```json
 {
   "this_week_revenue": ...,
-  "prior_week_revenue": ...,
-  "wow_change_pct": ...,
+  "yoy_week_revenue": ...,
+  "yoy_change_pct": ...,
   "channel_breakdown": {
-    "Website": {"this_week": ..., "prior_week": ...},
-    "Amazon": {"this_week": ..., "prior_week": ...}
+    "Website": {"this_week": ..., "last_year": ...},
+    "Amazon": {"this_week": ..., "last_year": ...}
   },
   "this_week_orders": ...,
-  "prior_week_orders": ...,
+  "yoy_week_orders": ...,
   "movers_risers_count": ...,
   "movers_fallers_count": ...,
   "movers_detail": [
-    {"sku": "...", "this_week_units": ..., "avg_units": ..., "pct_change": ...}
+    {"sku": "...", "this_week_revenue": ..., "avg_revenue": ..., "pct_change": ..., "in_stock": ...}
   ],
   "low_performers_count": ...,
   "fact_check_passed": null
@@ -615,9 +637,10 @@ The `movers_detail` array MUST contain every SKU that appears in the Biggest
 Movers section of the email (both risers and fallers). Each entry records the
 exact values used to generate the email table row:
 - `sku`: the product SKU string
-- `this_week_units`: integer units sold this week
-- `avg_units`: trailing 4-week average units (numeric, 1 decimal)
+- `this_week_revenue`: revenue this week (numeric, 2 decimal)
+- `avg_revenue`: trailing 4-week average revenue (numeric, 2 decimal)
 - `pct_change`: percent change vs 4-week average (numeric, 1 decimal)
+- `in_stock`: optional, included for faller entries only (`quantity_available` from product_info, integer; omitted for risers)
 
 All numeric values must be the exact figures from your query results -- do NOT
 round, estimate, or recalculate. The `fact_check_passed` field starts as `null`
@@ -651,13 +674,13 @@ WITH deduped AS (
 SELECT
   CASE
     WHEN sale_date BETWEEN '{this_week_start}' AND '{this_week_end}' THEN 'this_week'
-    WHEN sale_date BETWEEN '{prior_week_start}' AND '{prior_week_end}' THEN 'prior_week'
+    WHEN sale_date BETWEEN '{yoy_week_start}' AND '{yoy_week_end}' THEN 'yoy_week'
   END AS period,
   ROUND(SUM(line_price)::numeric, 2) AS total_revenue,
   COUNT(DISTINCT order_id) AS orders
 FROM deduped
 WHERE rn = 1
-  AND sale_date BETWEEN '{prior_week_start}' AND '{this_week_end}'
+  AND sale_date BETWEEN '{yoy_week_start}' AND '{this_week_end}'
   AND marketplace NOT IN ('Manual', 'TransferSaleHoldsPendingQuantity')
 GROUP BY 1 ORDER BY 1;
 ```
@@ -675,7 +698,7 @@ WITH deduped AS (
 SELECT
   CASE
     WHEN sale_date BETWEEN '{this_week_start}' AND '{this_week_end}' THEN 'this_week'
-    WHEN sale_date BETWEEN '{prior_week_start}' AND '{prior_week_end}' THEN 'prior_week'
+    WHEN sale_date BETWEEN '{yoy_week_start}' AND '{yoy_week_end}' THEN 'yoy_week'
   END AS period,
   CASE
     WHEN marketplace IN ('WooCommerce', 'Shopify') THEN 'Website'
@@ -684,7 +707,7 @@ SELECT
   ROUND(SUM(line_price)::numeric, 2) AS revenue
 FROM deduped
 WHERE rn = 1
-  AND sale_date BETWEEN '{prior_week_start}' AND '{this_week_end}'
+  AND sale_date BETWEEN '{yoy_week_start}' AND '{this_week_end}'
   AND marketplace NOT IN ('Manual', 'TransferSaleHoldsPendingQuantity')
 GROUP BY 1, 2 ORDER BY 1, 2;
 ```
@@ -703,7 +726,7 @@ WITH deduped AS (
   WHERE status IN ('Completed', 'ReadyToShip')
 ),
 this_week AS (
-  SELECT sku, SUM(quantity) AS tw_units
+  SELECT sku, ROUND(SUM(line_price)::numeric, 2) AS tw_revenue
   FROM deduped
   WHERE rn = 1
     AND sale_date BETWEEN '{this_week_start}' AND '{this_week_end}'
@@ -711,7 +734,7 @@ this_week AS (
   GROUP BY sku
 ),
 trail_avg AS (
-  SELECT sku, ROUND(SUM(quantity) / 4.0, 1) AS avg_units
+  SELECT sku, ROUND((SUM(line_price) / 4.0)::numeric, 2) AS avg_revenue
   FROM deduped
   WHERE rn = 1
     AND sale_date BETWEEN '{prior_week_start}'::date - 21 AND '{prior_week_end}'
@@ -721,14 +744,14 @@ trail_avg AS (
 )
 SELECT
   COALESCE(t.sku, tr.sku) AS sku,
-  COALESCE(t.tw_units, 0) AS this_week_units,
-  tr.avg_units,
-  ROUND(((COALESCE(t.tw_units, 0) - tr.avg_units) / tr.avg_units * 100)::numeric, 1) AS pct_change
+  COALESCE(t.tw_revenue, 0) AS this_week_revenue,
+  tr.avg_revenue,
+  ROUND(((COALESCE(t.tw_revenue, 0) - tr.avg_revenue) / tr.avg_revenue * 100)::numeric, 1) AS pct_change
 FROM trail_avg tr
 LEFT JOIN this_week t ON t.sku = tr.sku
-WHERE tr.avg_units > 0
-  AND ABS(COALESCE(t.tw_units, 0) - tr.avg_units) >= 5
-  AND ABS((COALESCE(t.tw_units, 0) - tr.avg_units) / tr.avg_units * 100) > 50
+WHERE tr.avg_revenue > 0
+  AND ABS(COALESCE(t.tw_revenue, 0) - tr.avg_revenue) >= 150
+  AND ABS((COALESCE(t.tw_revenue, 0) - tr.avg_revenue) / tr.avg_revenue * 100) > 50
 ORDER BY pct_change DESC;
 ```
 
@@ -744,12 +767,12 @@ Metrics to validate (all checks must pass):
 |----------|--------|----------------------|
 | FC-1 | this_week / total_revenue | `this_week_revenue` |
 | FC-1 | this_week / orders | `this_week_orders` |
-| FC-1 | prior_week / total_revenue | `prior_week_revenue` |
-| FC-1 | prior_week / orders | `prior_week_orders` |
+| FC-1 | yoy_week / total_revenue | `yoy_week_revenue` |
+| FC-1 | yoy_week / orders | `yoy_week_orders` |
 | FC-2 | this_week / Website | `channel_breakdown.Website.this_week` |
 | FC-2 | this_week / Amazon | `channel_breakdown.Amazon.this_week` |
-| FC-2 | prior_week / Website | `channel_breakdown.Website.prior_week` |
-| FC-2 | prior_week / Amazon | `channel_breakdown.Amazon.prior_week` |
+| FC-2 | yoy_week / Website | `channel_breakdown.Website.last_year` |
+| FC-2 | yoy_week / Amazon | `channel_breakdown.Amazon.last_year` |
 | FC-3 | per-SKU | `movers_detail` (see below) |
 
 **FC-3 per-SKU validation**:
@@ -761,10 +784,10 @@ query results. The check FAILS if:
   `pct_change` by more than 1.0 percentage point absolute
   (e.g., metrics says +176.9%, FC-3 says +176.0% -> pass;
    metrics says -100.0%, FC-3 says -58.8% -> fail)
-- A SKU in `movers_detail` has `this_week_units` that differs from FC-3
+- A SKU in `movers_detail` has `this_week_revenue` that differs from FC-3
 
 When reporting FC-3 discrepancies, list each failing SKU separately with
-the metric name format `movers_detail.<sku>.pct_change`.
+the metric name format `movers_detail.<sku>.this_week_revenue`.
 
 After comparison, update metrics.json:
 - If ALL checks pass: set `fact_check_passed` to `true`
