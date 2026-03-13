@@ -22,11 +22,16 @@ AUTH_STAGING_DIR = "/agent/auth"
 
 
 def setup_claude_auth() -> None:
-    """Copy Claude auth from read-only staging mount to writable home.
+    """Set up Claude CLI authentication inside the container.
 
-    Claude CLI needs to write to ~/.claude.json and ~/.claude/. We mount
-    the host auth read-only, then copy so the CLI has writable copies.
+    Prefers the CLAUDE_CODE_OAUTH_TOKEN env var (long-lived token from
+    ``claude setup-token``).  Falls back to copying mounted credential
+    files from the read-only staging directory.
     """
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        print("Using CLAUDE_CODE_OAUTH_TOKEN for auth", file=sys.stderr)
+        return
+
     home = Path.home()
     staging = Path(AUTH_STAGING_DIR)
 

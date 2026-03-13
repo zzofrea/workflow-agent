@@ -197,11 +197,6 @@ def build_docker_cmd(
         network,
         "--cap-drop",
         "ALL",
-        # Mount Claude auth to staging dir (read-only)
-        "-v",
-        f"{CLAUDE_AUTH_JSON}:/agent/auth/.claude.json:ro",
-        "-v",
-        f"{CLAUDE_AUTH_DIR}:/agent/auth/.claude:ro",
         # Mount input (read-only)
         "-v",
         f"{input_dir}:/agent/input:ro",
@@ -209,6 +204,20 @@ def build_docker_cmd(
         "-v",
         f"{output_dir}:/agent/output:rw",
     ]
+
+    # Auth: prefer long-lived token via env var, fall back to file mounts
+    oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if oauth_token:
+        cmd.extend(["-e", f"CLAUDE_CODE_OAUTH_TOKEN={oauth_token}"])
+    else:
+        cmd.extend(
+            [
+                "-v",
+                f"{CLAUDE_AUTH_JSON}:/agent/auth/.claude.json:ro",
+                "-v",
+                f"{CLAUDE_AUTH_DIR}:/agent/auth/.claude:ro",
+            ]
+        )
 
     # Add extra_hosts (--add-host) for external database access
     for host_entry in policy.extra_hosts:

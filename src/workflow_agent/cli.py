@@ -86,7 +86,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     )
 
     # Archive output
-    archive_output(service, role_name, report)
+    archive_output(service, role_name, report, run_id=args.run_id)
 
     # Notify
     if notify:
@@ -213,6 +213,7 @@ def main() -> None:
     run_parser.add_argument("--timeout", type=int, default=None, help="Override timeout (seconds)")
     run_parser.add_argument("--max-turns", type=int, default=None, help="Override max turns")
     run_parser.add_argument("--no-notify", action="store_true", help="Skip notifications")
+    run_parser.add_argument("--run-id", default=None, help="Orchestrator run ID for report lookup")
 
     # list subcommand
     list_parser = sub.add_parser("list", help="List available roles for a service")

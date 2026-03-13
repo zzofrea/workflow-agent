@@ -24,29 +24,36 @@ from workflow_agent.config import OUTPUT_BASE
 log = structlog.get_logger("workflow_agent.output")
 
 
-def archive_dir(service: str, role_name: str) -> str:
-    """Build the archive directory path for agent output."""
+def archive_dir(service: str, role_name: str, run_id: str | None = None) -> str:
+    """Build the archive directory path for agent output.
+
+    Format: ``{role}_{timestamp}`` or ``{role}_{timestamp}_{run_id}`` when
+    a run_id is provided.  The run_id suffix enables deterministic lookup
+    by the orchestrator.
+    """
     now = datetime.now(UTC)
     date_str = now.strftime("%Y-%m-%d_%H%M%S")
-    return os.path.join(OUTPUT_BASE, service, f"{role_name}_{date_str}")
+    suffix = f"_{run_id}" if run_id else ""
+    return os.path.join(OUTPUT_BASE, service, f"{role_name}_{date_str}{suffix}")
 
 
 def archive_output(
     service: str,
     role_name: str,
     report: dict[str, Any],
+    run_id: str | None = None,
 ) -> str:
-    """Archive the agent report to ~/agent-output/<service>/<role>_<timestamp>/.
+    """Archive the agent report to ~/agent-output/<service>/<role>_<timestamp>[_<run_id>]/.
 
     Only writes report.json. Returns the archive directory path.
     """
-    dest = archive_dir(service, role_name)
+    dest = archive_dir(service, role_name, run_id)
     os.makedirs(dest, exist_ok=True)
 
     with open(os.path.join(dest, "report.json"), "w") as f:
         json.dump(report, f, indent=2)
 
-    log.info("output.archived", path=dest, service=service, role=role_name)
+    log.info("output.archived", path=dest, service=service, role=role_name, run_id=run_id)
     print(f"Report archived to {dest}/")
     return dest
 
