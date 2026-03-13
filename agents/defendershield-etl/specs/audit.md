@@ -58,7 +58,7 @@ THEN it falls within the past 3 days.
 ## Scenario 12: Per-marketplace freshness
 GIVEN DefenderShield sells across Amazon and Shopify (WooCommerce is deprecated).
 WHEN the most recent _created_at is checked for each active marketplace in silver.fact_sales_items.
-THEN every active marketplace (Amazon, Shopify) has at least one row with _created_at within the past 7 days.
+THEN every active marketplace (Amazon, Shopify) has at least one row with _created_at within the past 1 day.
 
 ---
 
