@@ -1,0 +1,7 @@
+name: daily-briefing-reader
+description: Read-only synthesis policy — no database, no network writes
+
+databases: []
+
+tools:
+  - "Read"
