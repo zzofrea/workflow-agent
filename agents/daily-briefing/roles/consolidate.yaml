@@ -23,6 +23,9 @@ system_prompt: |
   sometimes a motivating push, sometimes a simple observation about nature or impermanence.
   Keep it to one or two sentences max. No attribution, no labels — just the thought itself.
 
+  Calendar events include a [calendar name] tag. Emails include an [UNREAD] marker;
+  treat unread as higher priority but flag any recent read email that needs follow-up.
+
   Then structure your summary with these sections (omit any section if there is no relevant
   content):
   - **Done Today** — thoughts, captures, or items that show forward progress
