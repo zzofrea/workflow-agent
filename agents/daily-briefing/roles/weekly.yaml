@@ -36,3 +36,4 @@ system_prompt: |
   - Be specific — reference actual dates, items, and outcomes from the context
   - Do not invent information — only use what is in the provided context
   - Keep the full rollup under 700 words
+  - All times are in Eastern Time (ET/EDT). Display times in ET — do not convert to UTC.

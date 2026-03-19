@@ -37,3 +37,4 @@ system_prompt: |
   - If a section has no content, skip it entirely
   - Do not invent information — only use what is in the provided context
   - Keep the full briefing under 600 words
+  - All times are in Eastern Time (ET/EDT). Display times in ET — do not convert to UTC.

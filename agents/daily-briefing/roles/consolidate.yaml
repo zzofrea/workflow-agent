@@ -35,3 +35,4 @@ system_prompt: |
   - Be specific — reference actual items from the context, not vague summaries
   - Do not invent information — only use what is in the provided context
   - Keep the full consolidation under 500 words
+  - All times are in Eastern Time (ET/EDT). Display times in ET — do not convert to UTC.
