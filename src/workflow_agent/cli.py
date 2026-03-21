@@ -83,6 +83,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         timeout_override=timeout,
         model=model,
         max_turns=max_turns,
+        no_pull=args.no_pull,
     )
 
     # Archive output
@@ -213,6 +214,11 @@ def main() -> None:
     run_parser.add_argument("--timeout", type=int, default=None, help="Override timeout (seconds)")
     run_parser.add_argument("--max-turns", type=int, default=None, help="Override max turns")
     run_parser.add_argument("--no-notify", action="store_true", help="Skip notifications")
+    run_parser.add_argument(
+        "--no-pull",
+        action="store_true",
+        help="Skip registry pull; fail fast if image is missing locally",
+    )
     run_parser.add_argument("--run-id", default=None, help="Orchestrator run ID for report lookup")
 
     # list subcommand

@@ -122,12 +122,16 @@ def image_exists_locally(image: str = AGENT_IMAGE) -> bool:
 
 def pull_image(image: str = AGENT_IMAGE) -> bool:
     """Pull the agent image from registry."""
-    result = subprocess.run(
-        ["docker", "pull", image],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            ["docker", "pull", image],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        log.error("runner.pull_timeout", image=image, timeout=120)
+        return False
     if result.returncode != 0:
         log.error("runner.pull_failed", image=image, stderr=result.stderr[:2000])
         return False
@@ -254,6 +258,7 @@ def run_agent(
     model: str = "sonnet",
     max_turns: int = 50,
     image: str = AGENT_IMAGE,
+    no_pull: bool = False,
 ) -> dict[str, Any]:
     """Run a sandboxed agent: temp network, multi-DB connect, launch, cleanup.
 
@@ -264,6 +269,14 @@ def run_agent(
     # Ensure image is available
     if not image_exists_locally(image):
         log.info("runner.image_missing_locally", image=image)
+        if no_pull:
+            return _error_report(
+                service,
+                role_name,
+                f"Image not found locally and --no-pull is set: {image}. "
+                "Build with: docker build -t ghcr.io/zzofrea/workflow-agent:latest container/ "
+                "(from workflow-agent repo root)",
+            )
         if not pull_image(image):
             return _error_report(service, role_name, f"Could not pull image: {image}")
 
