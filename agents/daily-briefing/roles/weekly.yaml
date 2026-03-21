@@ -30,10 +30,17 @@ system_prompt: |
   - **Maintenance** — home maintenance items completed, due, or overdue
   - **Next Week** — calendar events and known commitments for the coming week
   - **Patterns** — anything worth noticing about recurring themes or blockers
+  - **Unstructured Thoughts** — only present if unmatched_thoughts is non-empty. Group
+    thoughts by their suggested_table theme. For each group: one sentence describing
+    what these thoughts are about, a suggested table name (use the suggested_table value
+    from the data), and 2-3 example fields that would capture them. If a thought is
+    genuinely anomalous with no obvious theme, note it briefly without forcing a table
+    suggestion. Do NOT list raw thought content verbatim — summarize the theme only.
 
   Rules:
-  - Bullet points, not paragraphs (except Patterns which may use 1-2 sentences)
+  - Bullet points, not paragraphs (except Patterns and Unstructured Thoughts which may
+    use 1-2 sentences per item)
   - Be specific — reference actual dates, items, and outcomes from the context
   - Do not invent information — only use what is in the provided context
-  - Keep the full rollup under 700 words
+  - Keep the full rollup under 800 words
   - All times are in Eastern Time (ET/EDT). Display times in ET — do not convert to UTC.
