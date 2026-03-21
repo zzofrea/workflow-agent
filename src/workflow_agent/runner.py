@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -136,6 +137,27 @@ def pull_image(image: str = AGENT_IMAGE) -> bool:
         log.error("runner.pull_failed", image=image, stderr=result.stderr[:2000])
         return False
     log.info("runner.image_pulled", image=image)
+    return True
+
+
+def build_image_locally(image: str = AGENT_IMAGE) -> bool:
+    """Build the agent image from the local Dockerfile."""
+    dockerfile_dir = Path(__file__).resolve().parents[2] / "container"
+    log.info("runner.building_image_locally", image=image, context=str(dockerfile_dir))
+    try:
+        result = subprocess.run(
+            ["docker", "build", "-t", image, str(dockerfile_dir)],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        log.error("runner.build_timeout", image=image, timeout=600)
+        return False
+    if result.returncode != 0:
+        log.error("runner.build_failed", image=image, stderr=result.stderr[:2000])
+        return False
+    log.info("runner.image_built", image=image)
     return True
 
 
@@ -277,8 +299,8 @@ def run_agent(
                 "Build with: docker build -t ghcr.io/zzofrea/workflow-agent:latest container/ "
                 "(from workflow-agent repo root)",
             )
-        if not pull_image(image):
-            return _error_report(service, role_name, f"Could not pull image: {image}")
+        if not build_image_locally(image):
+            return _error_report(service, role_name, f"Could not build image locally: {image}")
 
     # Collect hostnames for Docker-managed databases only
     docker_dbs = [db for db in policy.databases if db.docker]

@@ -250,8 +250,8 @@ class TestRunAgent:
     """Tests for run_agent() with mocked Docker."""
 
     @patch("workflow_agent.runner.image_exists_locally", return_value=False)
-    @patch("workflow_agent.runner.pull_image", return_value=False)
-    def test_image_unavailable(self, mock_pull: MagicMock, mock_exists: MagicMock) -> None:
+    @patch("workflow_agent.runner.build_image_locally", return_value=False)
+    def test_image_unavailable(self, mock_build: MagicMock, mock_exists: MagicMock) -> None:
         policy = _make_policy(databases=[_make_db()])
         result = run_agent(
             "auditor",
@@ -260,7 +260,7 @@ class TestRunAgent:
             role_config={"name": "test"},
         )
         assert result["overall"] == "error"
-        assert "Could not pull" in result["summary"]
+        assert "Could not build" in result["summary"]
 
     @patch("workflow_agent.runner.image_exists_locally", return_value=True)
     @patch("workflow_agent.runner.resolve_container_names")
