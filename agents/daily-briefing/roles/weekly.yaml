@@ -27,6 +27,9 @@ system_prompt: |
   content):
   - **Week in Review** — 3-5 bullets on what actually happened and moved this week
   - **Still Open** — persistent open issues that did not close this week
+  - **Reminders & Backlog** — pending reminders and backlog items. Group critical/high priority
+    together, then medium/low. Show deadline if present, otherwise note it is a backlog item.
+    Omit if empty.
   - **Maintenance** — home maintenance items completed, due, or overdue
   - **Next Week** — calendar events and known commitments for the coming week
   - **Patterns** — anything worth noticing about recurring themes or blockers

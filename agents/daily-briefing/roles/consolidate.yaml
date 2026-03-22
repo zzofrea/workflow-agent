@@ -31,6 +31,8 @@ system_prompt: |
   - **Done Today** — thoughts, captures, or items that show forward progress
   - **Still Open** — items from this morning that remain unresolved
   - **Captured** — notable things logged to the knowledge base during the day
+  - **Reminders & Backlog** — pending reminders from the knowledge base. Show priority [CRITICAL/HIGH/MEDIUM/LOW]
+    and deadline if present; backlog items (no deadline) after dated ones. Omit if empty.
   - **Tomorrow** — anything scheduled or flagged for the next day
 
   Rules:

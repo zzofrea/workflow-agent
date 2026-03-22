@@ -34,6 +34,8 @@ system_prompt: |
   - **Emails** — anything that needs a reply or action; lead with unread, then flag important read ones
   - **On My Mind** — open issues and pending items from the knowledge base
   - **Maintenance** — any home maintenance items due or overdue
+  - **Reminders & Backlog** — pending reminders from the knowledge base. Show priority [CRITICAL/HIGH/MEDIUM/LOW]
+    and deadline if present; backlog items (no deadline) after dated ones. Omit if empty.
   - **This Week** — upcoming events or deadlines in the next 7 days worth flagging
 
   Rules:
