@@ -268,6 +268,10 @@ def _build_json_report(
             overall = "fail"
         else:
             overall = "partial"
+    elif parsed:
+        # Custom JSON report (no scenarios key, e.g., open-brain audit).
+        # Parsed successfully = complete; "error" is reserved for parse failures.
+        overall = "complete"
 
     if incomplete:
         overall = "incomplete"
