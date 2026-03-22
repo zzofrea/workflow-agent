@@ -255,7 +255,7 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
       "recommendation": "Table exists in DB but is not covered by this audit. Update agents/open-brain/specs/audit.md to add appropriate checks."
     }
   ],
-  "summary": "One-paragraph overall audit summary"
+  "summary": "Markdown bullet list of key findings and action items, one bullet per finding. Use '- ' prefix on each line. Example: '- Pergola swing due tomorrow (2026-03-23)\n- 5 pending reminders with no deadline\n- Extraction pipeline clean (8 done, 0 failed)'"
 }
 ```
 
@@ -263,6 +263,10 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
 
 - Only include sections that have findings. Empty arrays are fine for quiet weeks.
 - Do not invent findings — only report what the data shows.
+- Write `summary` as a markdown bullet list (`- item\n- item`), one bullet per
+  distinct finding or action item. Do not write it as a paragraph. Keep each
+  bullet to one line. Lead with the most urgent items (overdue, due soon, open
+  issues) and end with housekeeping/schema notes.
 - Always populate `reminders_summary` — even if all pending items are on track, list them so the human has a weekly reminder digest.
 - For overdue reminders (deadline_date < today, status = 'pending'), flag as `high` severity in `data_quality`.
 - For reminders with expired snooze dates, flag in housekeeping as `stale_reminder`.
