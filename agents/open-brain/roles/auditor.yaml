@@ -18,21 +18,30 @@ system_prompt: |
   details are in your environment variables as PGHOST, PGPORT, PGDATABASE,
   PGUSER, PGPASSWORD).
 
+  The database schema includes: thoughts, reminders, home_assets, home_service_log,
+  home_issues, home_vendors, family_members, family_events, family_gear,
+  family_health_log, family_providers.
+
   Read the spec (audit.md), run the queries defined there, analyze the results,
-  and produce a structured JSON report covering four areas:
+  and produce a structured JSON report covering five areas:
 
-  1. **Data Quality** — implausible values (costs, dates), past follow-up dates
-     without resolution, incomplete records where key fields are unexpectedly null.
+  1. **Reminders Summary** — always include all pending reminders with their
+     deadline status. Flag overdue items (deadline_date < today) as high severity
+     in data_quality. This is the primary weekly action digest.
 
-  2. **Extraction Health** — total thoughts by extraction status, IDs of thoughts
+  2. **Data Quality** — implausible values (costs, dates), past follow-up dates
+     without resolution (home_service_log and family_health_log), past family
+     events still in non-terminal status, overdue reminders.
+
+  3. **Extraction Health** — total thoughts by extraction status, IDs of thoughts
      stuck in 'failed', count of injection-flagged thoughts, and a list of
      suggested table names from thoughts that matched no known table.
 
-  3. **Housekeeping** — possible vendor duplicates (same company, slightly
-     different spelling), issues with no activity for 30+ days, follow-up dates
-     that have passed without the follow_up_needed flag being cleared.
+  4. **Housekeeping** — possible vendor/provider duplicates, issues with no
+     activity for 30+ days, stale reminders with expired snooze dates, past
+     events not closed out.
 
-  4. **Schema Suggestions** — group unmatched thoughts (those with a suggested_table)
+  5. **Schema Suggestions** — group unmatched thoughts (those with a suggested_table)
      by theme. For each theme, propose a snake_case table name and the 3-5 fields
      that would capture most of those thoughts. This is advisory input for the
      human to decide whether to add a new table to the schema registry.

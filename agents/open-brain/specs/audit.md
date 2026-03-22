@@ -36,6 +36,37 @@ ORDER BY created_at DESC
 LIMIT 20;
 ```
 
+### Data Quality — Reminders
+
+```sql
+-- All pending reminders (surface everything actionable)
+SELECT id, title, deadline_date, priority, status, snoozed_until, domain, created_at
+FROM reminders
+WHERE status = 'pending'
+ORDER BY deadline_date ASC NULLS LAST, created_at ASC;
+
+-- Overdue: deadline has passed and still pending
+SELECT id, title, deadline_date, priority, domain
+FROM reminders
+WHERE status = 'pending'
+  AND deadline_date < CURRENT_DATE;
+
+-- Snooze expired: snoozed_until has passed but still pending
+SELECT id, title, deadline_date, snoozed_until, priority, domain
+FROM reminders
+WHERE status = 'pending'
+  AND snoozed_until IS NOT NULL
+  AND snoozed_until < CURRENT_DATE;
+
+-- Stale: no deadline, pending for 30+ days
+SELECT id, title, priority, domain, created_at,
+       CURRENT_DATE - created_at::date AS days_pending
+FROM reminders
+WHERE status = 'pending'
+  AND deadline_date IS NULL
+  AND created_at < NOW() - INTERVAL '30 days';
+```
+
 ### Data Quality — Service Log
 
 ```sql
@@ -83,12 +114,54 @@ WHERE i.status IN ('open', 'in_progress', 'waiting')
   AND i.opened_date < CURRENT_DATE - INTERVAL '30 days';
 ```
 
-### Vendor Deduplication
+### Data Quality — Family Health Follow-ups
 
 ```sql
--- All vendors for cross-time duplicate detection
+-- Health log entries from the past 7 days
+SELECT id, family_members, provider_name, occurred_date, record_type,
+       summary, follow_up_needed, follow_up_date
+FROM family_health_log
+WHERE created_at >= NOW() - INTERVAL '7 days'
+ORDER BY occurred_date DESC;
+
+-- Overdue follow-ups
+SELECT id, family_members, summary, follow_up_date, follow_up_notes, provider_name
+FROM family_health_log
+WHERE follow_up_needed = true
+  AND follow_up_date < CURRENT_DATE;
+```
+
+### Data Quality — Family Events
+
+```sql
+-- Upcoming events in the next 14 days
+SELECT id, title, event_type, family_members, scheduled_date, scheduled_time,
+       location, provider_name, status, recurring
+FROM family_events
+WHERE status NOT IN ('completed', 'cancelled')
+  AND scheduled_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '14 days'
+ORDER BY scheduled_date, scheduled_time;
+
+-- Past events still in non-terminal status
+SELECT id, title, event_type, family_members, scheduled_date, status
+FROM family_events
+WHERE scheduled_date < CURRENT_DATE
+  AND status NOT IN ('completed', 'cancelled')
+ORDER BY scheduled_date DESC;
+```
+
+### Vendor / Provider Deduplication
+
+```sql
+-- Home vendors for duplicate detection
 SELECT id, name, category, phone, email, rating, notes, created_at
 FROM home_vendors
+ORDER BY lower(name);
+
+-- Family providers for duplicate detection
+SELECT id, name, practice_name, provider_type, family_members,
+       phone, email, rating, created_at
+FROM family_providers
 ORDER BY lower(name);
 ```
 
@@ -100,13 +173,29 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
 {
   "data_quality": [
     {
-      "table": "home_service_log | home_issues | home_assets | home_vendors",
+      "table": "home_service_log | home_issues | home_assets | home_vendors | reminders | family_health_log | family_events | family_providers",
       "record_id": "uuid or null",
       "finding": "Brief description of the problem",
       "severity": "high | medium | low",
       "recommendation": "What should be done"
     }
   ],
+  "reminders_summary": {
+    "total_pending": 0,
+    "overdue": 0,
+    "due_this_week": 0,
+    "no_deadline": 0,
+    "items": [
+      {
+        "id": "uuid",
+        "title": "reminder title",
+        "deadline_date": "YYYY-MM-DD or null",
+        "priority": "medium",
+        "domain": "home | family | work",
+        "status_note": "overdue | due soon | no deadline | on track"
+      }
+    ]
+  },
   "extraction_health": {
     "done": 0,
     "pending": 0,
@@ -121,7 +210,7 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
   },
   "housekeeping": [
     {
-      "type": "vendor_duplicate | stale_issue | overdue_followup",
+      "type": "vendor_duplicate | provider_duplicate | stale_issue | overdue_followup | stale_reminder | past_event_not_closed",
       "description": "Specific observation",
       "recommendation": "What to do"
     }
@@ -142,12 +231,12 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
 
 - Only include sections that have findings. Empty arrays are fine for quiet weeks.
 - Do not invent findings — only report what the data shows.
-- For vendor duplicates, flag names that differ only by punctuation, spacing, or
-  common abbreviations (e.g. "Mitch A/C" vs "Mitch AC").
-- Flag implausible costs — $0 on a non-warranty repair is suspicious; $100k on a
-  routine visit is a likely data entry error.
-- Flag follow-up dates in the past that have not been resolved.
-- Issues open for 30+ days with no linked service activity should appear in
-  housekeeping as stale.
-- For schema_suggestions, group unmatched thoughts by theme, propose a snake_case
-  table name, and list 3-5 key fields that would capture most of those thoughts.
+- Always populate `reminders_summary` — even if all pending items are on track, list them so the human has a weekly reminder digest.
+- For overdue reminders (deadline_date < today, status = 'pending'), flag as `high` severity in `data_quality`.
+- For reminders with expired snooze dates, flag in housekeeping as `stale_reminder`.
+- For vendor/provider duplicates, flag names that differ only by punctuation, spacing, or common abbreviations (e.g. "Mitch A/C" vs "Mitch AC").
+- Flag implausible costs — $0 on a non-warranty repair is suspicious; $100k on a routine visit is a likely data entry error.
+- Flag follow-up dates in the past that have not been resolved (both home_service_log and family_health_log).
+- Issues open for 30+ days with no linked service activity should appear in housekeeping as stale.
+- Past family_events still in non-terminal status should appear in housekeeping as `past_event_not_closed`.
+- For schema_suggestions, group unmatched thoughts by theme, propose a snake_case table name, and list 3-5 key fields that would capture most of those thoughts.
