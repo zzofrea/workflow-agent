@@ -29,7 +29,11 @@ WHERE table_schema = 'public'
     'family_events',
     'family_gear',
     'family_health_log',
-    'family_providers'
+    'family_providers',
+    'rd_clients',
+    'rd_projects',
+    'rd_work_sessions',
+    'rd_deployments'
   )
 ORDER BY table_name;
 ```
@@ -176,6 +180,48 @@ WHERE scheduled_date < CURRENT_DATE
 ORDER BY scheduled_date DESC;
 ```
 
+### Data Quality — Rusty Data
+
+```sql
+-- Active projects
+SELECT name, type, status, client_name, phase, updated_at
+FROM rd_projects
+WHERE status = 'active'
+ORDER BY type, name;
+
+-- Sessions in the past 7 days
+SELECT project_name, session_type, session_date, summary
+FROM rd_work_sessions
+WHERE created_at >= NOW() - INTERVAL '7 days'
+ORDER BY session_date DESC NULLS LAST, created_at DESC;
+
+-- Projects with no session in the past 30 days (stale signal)
+SELECT p.name, p.type, p.status, MAX(s.session_date) AS last_session
+FROM rd_projects p
+LEFT JOIN rd_work_sessions s ON lower(s.project_name) = lower(p.name)
+WHERE p.status = 'active'
+GROUP BY p.name, p.type, p.status
+HAVING MAX(s.session_date) < CURRENT_DATE - INTERVAL '30 days'
+    OR MAX(s.session_date) IS NULL
+ORDER BY last_session ASC NULLS FIRST;
+
+-- Deployments not in 'deployed' status (anomaly signal)
+SELECT service_name, project_name, status, version, deployed_at
+FROM rd_deployments
+WHERE status != 'deployed'
+ORDER BY updated_at DESC;
+
+-- All deployments (current snapshot)
+SELECT service_name, project_name, status, version, deployed_at, updated_at
+FROM rd_deployments
+ORDER BY project_name, service_name;
+
+-- Active clients
+SELECT company_name, contact_name, status, updated_at
+FROM rd_clients
+ORDER BY status, company_name;
+```
+
 ### Vendor / Provider Deduplication
 
 ```sql
@@ -199,7 +245,7 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
 {
   "data_quality": [
     {
-      "table": "home_service_log | home_issues | home_assets | home_vendors | reminders | family_health_log | family_events | family_providers",
+      "table": "home_service_log | home_issues | home_assets | home_vendors | reminders | family_health_log | family_events | family_providers | rd_projects | rd_work_sessions | rd_deployments | rd_clients",
       "record_id": "uuid or null",
       "finding": "Brief description of the problem",
       "severity": "high | medium | low",
@@ -236,7 +282,7 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
   },
   "housekeeping": [
     {
-      "type": "vendor_duplicate | provider_duplicate | stale_issue | overdue_followup | stale_reminder | past_event_not_closed",
+      "type": "vendor_duplicate | provider_duplicate | stale_issue | overdue_followup | stale_reminder | past_event_not_closed | stale_rd_project | rd_deployment_anomaly",
       "description": "Specific observation",
       "recommendation": "What to do"
     }
@@ -277,3 +323,6 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
 - Past family_events still in non-terminal status should appear in housekeeping as `past_event_not_closed`.
 - For schema_suggestions, group unmatched thoughts by theme, propose a snake_case table name, and list 3-5 key fields that would capture most of those thoughts.
 - Always run the schema drift check first. Any table returned must appear in `schema_drift` — do not silently skip it.
+- For active rd_projects with no session in 30+ days, add a `stale_rd_project` housekeeping item.
+- For rd_deployments with status != 'deployed', add a `rd_deployment_anomaly` housekeeping item.
+- Include a brief Rusty Data summary in the overall `summary` bullet list: active project count, sessions this week, any anomalies.
