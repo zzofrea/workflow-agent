@@ -8,6 +8,32 @@ maintenance system. Run every Sunday before the weekly briefing.
 Query the open-brain Postgres database (connection in your env vars). The audit
 window is the past 7 days unless otherwise specified.
 
+### Schema Drift Check
+
+Run this first. Any tables returned are not covered by this audit spec and must
+be reported in the `schema_drift` section of the output.
+
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_type = 'BASE TABLE'
+  AND table_name NOT IN (
+    'thoughts',
+    'reminders',
+    'home_assets',
+    'home_service_log',
+    'home_issues',
+    'home_vendors',
+    'family_members',
+    'family_events',
+    'family_gear',
+    'family_health_log',
+    'family_providers'
+  )
+ORDER BY table_name;
+```
+
 ### Extraction Health
 
 ```sql
@@ -223,6 +249,12 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
       "proposed_fields": ["field1", "field2"]
     }
   ],
+  "schema_drift": [
+    {
+      "table_name": "new_table_name",
+      "recommendation": "Table exists in DB but is not covered by this audit. Update agents/open-brain/specs/audit.md to add appropriate checks."
+    }
+  ],
   "summary": "One-paragraph overall audit summary"
 }
 ```
@@ -240,3 +272,4 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
 - Issues open for 30+ days with no linked service activity should appear in housekeeping as stale.
 - Past family_events still in non-terminal status should appear in housekeeping as `past_event_not_closed`.
 - For schema_suggestions, group unmatched thoughts by theme, propose a snake_case table name, and list 3-5 key fields that would capture most of those thoughts.
+- Always run the schema drift check first. Any table returned must appear in `schema_drift` — do not silently skip it.
