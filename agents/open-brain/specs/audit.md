@@ -33,7 +33,9 @@ WHERE table_schema = 'public'
     'rd_clients',
     'rd_projects',
     'rd_work_sessions',
-    'rd_deployments'
+    'rd_deployments',
+    'reminder_completions',
+    'reminder_snoozes'
   )
 ORDER BY table_name;
 ```
@@ -95,6 +97,35 @@ FROM reminders
 WHERE status = 'pending'
   AND deadline_date IS NULL
   AND created_at < NOW() - INTERVAL '30 days';
+```
+
+### Data Quality — Reminder Activity (reminder_completions / reminder_snoozes)
+
+```sql
+-- Completions in the past 7 days
+SELECT rc.id, r.title, rc.completed_at, rc.resolution_notes
+FROM reminder_completions rc
+JOIN reminders r ON r.id = rc.reminder_id
+WHERE rc.completed_at >= NOW() - INTERVAL '7 days'
+ORDER BY rc.completed_at DESC;
+
+-- Active snoozes (snooze_until >= today)
+SELECT rs.id, r.title, rs.snooze_until, rs.reason
+FROM reminder_snoozes rs
+JOIN reminders r ON r.id = rs.reminder_id
+WHERE rs.snooze_until >= CURRENT_DATE
+ORDER BY rs.snooze_until ASC;
+
+-- Orphaned completions or snoozes (reminder deleted but activity row still present)
+SELECT rc.id, rc.reminder_id, rc.completed_at
+FROM reminder_completions rc
+LEFT JOIN reminders r ON r.id = rc.reminder_id
+WHERE r.id IS NULL;
+
+SELECT rs.id, rs.reminder_id, rs.snooze_until
+FROM reminder_snoozes rs
+LEFT JOIN reminders r ON r.id = rs.reminder_id
+WHERE r.id IS NULL;
 ```
 
 ### Data Quality — Service Log
@@ -323,6 +354,6 @@ Respond with ONLY a JSON object (no markdown fencing, no extra text):
 - Past family_events still in non-terminal status should appear in housekeeping as `past_event_not_closed`.
 - For schema_suggestions, group unmatched thoughts by theme, propose a snake_case table name, and list 3-5 key fields that would capture most of those thoughts.
 - Always run the schema drift check first. Any table returned must appear in `schema_drift` — do not silently skip it.
-- For active rd_projects with no session in 30+ days, add a `stale_rd_project` housekeeping item.
+- For active rd_projects with no session in 30+ days, add a `stale_rd_project` housekeeping item. Exception: autonomous infrastructure deployments (e.g. daily-briefing-agent, workflow-platform, workflow-sentinel) are expected to have zero logged sessions — do not flag these as stale unless they have status anomalies or deployment failures.
 - For rd_deployments with status != 'deployed', add a `rd_deployment_anomaly` housekeeping item.
 - Include a brief Rusty Data summary in the overall `summary` bullet list: active project count, sessions this week, any anomalies.
