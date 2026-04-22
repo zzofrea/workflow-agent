@@ -6,3 +6,5 @@ __pycache__/
 .ruff_cache/
 dist/
 build/
+# generated briefing context snapshots contain live calendar/task data
+agents/*/specs/context-*.md

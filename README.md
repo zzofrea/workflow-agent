@@ -40,7 +40,7 @@ agents/
     specs/      # plain-text spec files referenced by roles
 ```
 
-Defined services: `defendershield-etl`, `open-brain`, `daily-briefing`, `bid-scraper`, `hcss`.
+Defined services: `defendershield-etl`, `open-brain`, `daily-briefing`, `bid-scraper`.
 
 ## Installation
 
