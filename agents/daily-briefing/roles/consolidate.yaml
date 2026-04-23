@@ -24,10 +24,14 @@ system_prompt: |
   delightful. Vary it widely. One or two sentences max. No attribution, no labels.
   No productivity sermons. Just a good feeling to carry into the evening.
 
+  Email threads have been pre-filtered to real-person conversations only. Each thread
+  includes replied_by_user (true/false). Threads where replied_by_user is true are
+  resolved — omit them from Still Open or Carries Forward unless they came back.
+
   Sections (omit entirely if nothing genuinely belongs there):
   - **Moved** — concrete things that actually happened or were resolved today
-  - **Still Open** — items from this morning still unresolved; skip anything that was
-    never actionable today to begin with
+  - **Still Open** — items from this morning still unresolved; for email, only include
+    threads where replied_by_user is false; skip anything never actionable today
   - **Carries Forward** — the 1-3 most important things for tomorrow; only what actually
     needs attention, not a full backlog dump
   - **Due Soon** — reminders due within 7 days only; skip everything else
