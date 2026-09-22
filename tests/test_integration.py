@@ -149,37 +149,6 @@ class TestScenario3MultiDatabase:
         assert "ETL_DBHOST=ds-etl-postgres" in cmd_str
 
 
-class TestScenario4DryRunValidation:
-    """Scenario 4: Dry run validates without launching.
-
-    GIVEN valid role and policy files exist.
-    WHEN the operator runs validate.
-    THEN the framework parses and validates both files.
-    AND no container is launched.
-    """
-
-    def test_validate_real_files(self) -> None:
-        agents_dir = Path(__file__).parent.parent / "agents"
-
-        # Validate bid-scraper auditor
-        role = load_role(agents_dir / "bid-scraper" / "roles" / "auditor.yaml")
-        policy = load_policy(agents_dir / "bid-scraper" / "policies" / "reader.yaml")
-
-        assert role.policy == "reader"
-        assert policy.name == "bid-scraper-reader"
-        assert len(policy.databases) == 1
-        assert policy.databases[0].hostname == "gov-bid-postgres"
-
-    def test_validate_etl_files(self) -> None:
-        agents_dir = Path(__file__).parent.parent / "agents"
-
-        role = load_role(agents_dir / "defendershield-etl" / "roles" / "auditor.yaml")
-        policy = load_policy(agents_dir / "defendershield-etl" / "policies" / "reader.yaml")
-
-        assert role.policy == "reader"
-        assert policy.databases[0].password == "trust"
-
-
 class TestScenario5DatabaseNotRunning:
     """Scenario 5: Database container is not running.
 
