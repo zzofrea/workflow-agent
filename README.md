@@ -25,7 +25,7 @@ workflow-agent run auditor --target defendershield-etl --model claude-opus-4-5 -
 workflow-agent list --target daily-briefing
 
 # Validate policy + role files and check that database containers are running
-workflow-agent validate --target open-brain --role auditor
+workflow-agent validate --target daily-briefing --role morning
 ```
 
 `run` exits 1 on `fail` or `error` outcome, making it safe to use as a CI gate or cron step.
@@ -40,7 +40,7 @@ agents/
     specs/      # plain-text spec files referenced by roles
 ```
 
-Defined services: `defendershield-etl`, `open-brain`, `daily-briefing`, `bid-scraper`.
+Defined services: `defendershield-etl`, `daily-briefing`, `bid-scraper`.
 
 ## Installation
 
